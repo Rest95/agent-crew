@@ -105,9 +105,9 @@ pre.cmd { margin: 0; font-family: var(--mono); font-size: 13px; background: var(
 
 <div class="wrap">
   <header>
-    <div class="eyebrow">Rest95/agent-crew · v0.3.0 · Claude Code mod</div>
+    <div class="eyebrow">Rest95/agent-crew · v0.4.0 · Claude Code mod</div>
     <h1>agent-crew</h1>
-    <p class="lede">An <b>Agents</b> side panel that follows a superpowers plan as it runs: the plan's progress, every task, and for each agent the task it is on and whether it is <b>implementing</b> or <b>reviewing</b>. Below the panel, one row above the prompt sums it up with the model, branch, context and cache countdown. It all opens by itself; there is nothing to run. The drawings come from the mod's own code and a sample plan. Click an agent to see which transcript would take the main view.</p>
+    <p class="lede">An <b>Agents</b> side panel for any Claude Code session that sends subagents to work: for each agent, <b>what it is doing</b>, <b>how far along it is</b> and <b>what it has cost</b>. When Claude keeps a task list, that list becomes the plan; with a superpowers plan, it follows the plan, each task, and whether an agent is <b>implementing</b> or <b>reviewing</b>. One row above the prompt sums it up with the model, branch, context and cache countdown. It all opens by itself; there is nothing to run. The drawings come from the mod's own code and sample sessions. Click an agent to see which transcript would take the main view.</p>
   </header>
 
   <div class="controls">
@@ -235,7 +235,7 @@ function renderRow() {
   const line = mode === 'plan' ? m.line : mode === 'plain' ? 'Agent(Find the payment rules)' : 'Ready.';
   let tprog = '', aprog = '';
   if (mode === 'plan') {
-    tprog = `<span style="color:${pc}">●</span> <span class="b">Payments module</span> <span style="color:${pc}">${bar(m.pct, 16)}</span> <span class="b">${esc(m.label)}</span> <span class="dim">${m.pct}%${m.working ? ` · ${m.working} working` : ''}</span>`;
+    tprog = `<span style="color:${pc}">●</span> <span class="b">${esc(m.title)}</span> <span style="color:${pc}">${bar(m.pct, 16)}</span> <span class="b">${esc(m.label)}</span> <span class="dim">${m.pct}%${m.working ? ` · ${m.working} working` : ''}</span>`;
     aprog = `${img(m.bar, 330, 22, 'plan progress')}${m.working ? `<span class="chip" style="color:var(--app-muted)">· ${m.working} working</span>` : ''}`;
   } else if (mode === 'plain') {
     tprog = `<span style="color:${C.accent}">●</span> <span class="b">2 working · 1 done</span>`;

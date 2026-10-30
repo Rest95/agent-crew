@@ -40,7 +40,8 @@ import {
   taskRowSvg,
   totalsSvg,
 } from '../plugins/agent-crew/hooks/art'
-import { planPhase } from '../plugins/agent-crew/hooks/model'
+import { ACTION_COLOR, finishedLine, noListHeading, noListPhase } from '../plugins/agent-crew/hooks/art'
+import { checklistAsPlan, planPhase } from '../plugins/agent-crew/hooks/model'
 
 const W = 380
 const MIN = 60_000
@@ -105,9 +106,47 @@ const T5 = [run('implement', 5, 20, 2, { model: 'claude-haiku-5-5', stepDone: 4,
 const FINAL = run('final', null, 23, 3)
 const EXPLORE = run('other', null, 0, 1, { type: 'Explore', label: 'Map payment rules in design.md', model: 'claude-haiku-5-5' })
 
-type Moment = { id: string; name: string; note: string; plan: Plan; runs: Run[]; now: number }
+// Everyday mode: Claude's own task list, and agents with no list at all.
+const LIST = checklistAsPlan({
+  heading: 'Add CSV export to the reports page',
+  items: [
+    { key: '1', n: 1, text: 'Find how reports are built', status: 'completed' },
+    { key: '2', n: 2, text: 'Add the CSV writer', status: 'in_progress' },
+    { key: '3', n: 3, text: 'Wire the export button', status: 'pending' },
+    { key: '4', n: 4, text: 'Run the tests', status: 'pending' },
+  ],
+})
+const HAIKU = 'claude-haiku-5-5'
+const EVERYDAY_LIST = [
+  run('other', 1, 0, 1, { type: 'Explore', label: 'Find report builders', model: HAIKU }),
+  running(run('other', 2, 1, 4, { label: 'Write the CSV writer and tests', stepDone: 3, stepTotal: 5, stepNote: 'Writing the tests', action: '✎ Editing lib/export/csv.ts', steps: 23 }), 6 * MIN),
+  running(run('other', 2, 4, 2, { type: 'Explore', label: 'Check date formats in reports', model: HAIKU, action: '⌕ Searching "toLocaleDateString"', steps: 14 }), 6 * MIN),
+]
+const EVERYDAY_AGENTS = [
+  run('other', null, 0, 1, { type: 'Explore', label: 'Map the API routes', model: HAIKU }),
+  running(run('other', null, 0, 4, { type: 'code-reviewer', label: 'Review the auth middleware', model: 'claude-opus-5-5', stepDone: 2, stepTotal: 4, stepNote: 'Checking token expiry', action: '⌕ Reading src/auth/session.ts', steps: 11 }), 3 * MIN),
+  running(run('other', null, 1, 2, { type: 'Explore', label: 'Find unused exports', model: HAIKU, action: '▶ Running pnpm ts-prune', steps: 9 }), 3 * MIN),
+]
+
+type Moment = { id: string; name: string; note: string; plan: Plan | null; runs: Run[]; now: number }
 
 const MOMENTS: Moment[] = [
+  {
+    id: 'everyday-list',
+    name: 'Task list',
+    note: "No superpowers: Claude's own task list is the plan, and each agent sits under the task it was started for, saying what it is doing.",
+    plan: LIST,
+    now: 6 * MIN,
+    runs: EVERYDAY_LIST,
+  },
+  {
+    id: 'everyday-agents',
+    name: 'No task list',
+    note: 'Claude just sends agents out: the bar counts the ones finished, and each running agent says what it is doing.',
+    plan: null,
+    now: 3 * MIN,
+    runs: EVERYDAY_AGENTS,
+  },
   {
     id: 'rereview',
     name: 'Task 2 · fix round',
@@ -139,7 +178,7 @@ type Img = { svg: string; w: number; h: number; alt: string; agentId?: string }
 // The desktop panel of one moment: the mod's own layout (art.ts desktopPaneItems), so the two cannot drift.
 // The page shows the first four finished rows and counts the rest, to keep it short.
 function desktop(m: Moment): (Img | string)[] {
-  const items = desktopPaneItems(W, m.plan, m.runs, m.now, { finishedOpen: true, phase: planPhase(m.plan, m.runs) })
+  const items = desktopPaneItems(W, m.plan, m.runs, m.now, { finishedOpen: true, ...(m.plan ? { phase: planPhase(m.plan, m.runs) } : {}) })
   const out: (Img | string)[] = []
   let finishedShown = 0
   let finishedTotal = 0
@@ -171,6 +210,7 @@ const span = (color: string | null, text: string, cls = '') => `<span${color ? `
 // The terminal panel of one moment, grouped by task as the panel draws it: a line under the
 // header, each task with its agents (the current task open; the page opens and closes the rest).
 function terminal(m: Moment): string {
+  if (!m.plan) return noListTerminal(m)
   const phase = planPhase(m.plan, m.runs)
   const pct = Math.round((phase.isFinished ? 1 : phase.done / phase.total) * 100)
   const cost = m.runs.reduce((n, r) => n + r.costUsd, 0)
@@ -183,7 +223,9 @@ function terminal(m: Moment): string {
     const steps = stepsText(r)
     const name = `  ${span(c, '▣')} ${span(null, r.label || r.type, 'b')}`
     const details = `    ${span(c, runRole(r))}${span(null, ` · ${runModel(r)} · `, 'dim')}${mark}${span(null, ` ${fmtTime(elapsed(r, m.now))}  ≈${fmtCost(r.costUsd)}`, 'dim')}${r.findings ? span(ROLE_STYLE.review.color, `  ${r.findings} findings`) : ''}`
-    const out = [r.agentId ? `<button type="button" class="tview" data-view="${r.agentId}">${name}</button><!--VIEWING:${r.agentId}-->` : name, details]
+    const out = [r.agentId ? `<button type="button" class="tview" data-view="${r.agentId}">${name}</button><!--VIEWING:${r.agentId}-->` : name]
+    if (r.status === 'running' && r.action) out.push(`    ${span(ACTION_COLOR, r.action)}`)
+    out.push(details)
     if (r.status === 'running') out.push(`    ${p === null ? span(null, bar(ctxPercent(r), 14), 'dim') : span(c, bar(p * 100, 14))}${span(null, ` ${steps ? steps + ' · ' : ''}ctx ${ctxPercent(r)}% · ${fmtTokens(r.contextTokens)}`, 'dim')}`)
     return out
   }
@@ -208,6 +250,39 @@ function terminal(m: Moment): string {
     lines.push(`<div class="tbody" data-body="${g.key}"${open ? '' : ' hidden'}>${g.runs.flatMap(agent).map(l => `<div class="ln">${l}</div>`).join('')}</div>`)
   }
   return lines.map(l => (l.startsWith('<div class="tbody"') ? l : `<div class="ln">${l || '&nbsp;'}</div>`)).join('')
+}
+
+// The terminal panel with no task list: counts and a bar, the agents at work, the finished ones folded.
+function noListTerminal(m: Moment): string {
+  const ph = noListPhase(m.runs)
+  const pct = ph.total ? Math.round((ph.done / ph.total) * 100) : 0
+  const cost = m.runs.reduce((n, r) => n + r.costUsd, 0)
+  const tokens = m.runs.reduce((n, r) => n + r.tokens, 0)
+  const RULE = span(null, '─'.repeat(52), 'dim')
+  const working = m.runs.filter(r => r.status === 'running')
+  const done = m.runs.filter(r => r.status !== 'running')
+  const lines: string[] = [
+    span(ACCENT, noListHeading(m.runs), 'b'),
+    `${span(ACCENT, bar(pct, 24))} ${span(null, ph.label, 'b')} ${span(null, `${pct}%`, 'dim')}`,
+    span(null, `≈${fmtCost(cost)} · ${fmtTokens(tokens)} tokens`, 'dim'),
+    RULE,
+    span(null, `Working · ${working.length}`, 'dim'),
+  ]
+  for (const r of working) {
+    const c = colorOf(r)
+    const p = progressOf(r)
+    const steps = stepsText(r)
+    lines.push(`  ${span(c, '▣')} <button type="button" class="tview" data-view="${r.agentId}">${span(null, r.label, 'b')}</button><!--VIEWING:${r.agentId}-->`)
+    if (r.action) lines.push(`    ${span(ACTION_COLOR, r.action)}`)
+    lines.push(`    ${span(c, runRole(r))}${span(null, ` · ${runModel(r)} · `, 'dim')}${span(c, GLYPH.running)}${span(null, ` ${fmtTime(elapsed(r, m.now))}  ≈${fmtCost(r.costUsd)}`, 'dim')}`)
+    lines.push(`    ${p === null ? span(null, bar(ctxPercent(r), 14), 'dim') : span(c, bar(p * 100, 14))}${span(null, ` ${steps ? steps + ' · ' : ''}ctx ${ctxPercent(r)}%`, 'dim')}`)
+    lines.push('')
+  }
+  if (done.length) {
+    lines.push(RULE, span(null, `▾ Finished · ${done.length}`, 'dim'))
+    for (const r of done) lines.push(`  ${span('#5fd787', finishedLine(r, m.now).slice(0, 1))}${span(null, finishedLine(r, m.now).slice(1), 'dim')}`)
+  }
+  return lines.map(l => `<div class="ln">${l || '&nbsp;'}</div>`).join('')
 }
 
 const ROLES: { role: Run['role']; label: string; example: string }[] = [
@@ -236,14 +311,15 @@ const legend = ROLES.map(({ role, label, example }) => {
 )
 
 // The row above the prompt: its pieces for each moment, drawn by the mod's own art.ts.
-const CONTEXTS: Record<string, number> = { rereview: 22, implementing: 38, done: 46 }
+const CONTEXTS: Record<string, number> = { 'everyday-list': 22, 'everyday-agents': 12, rereview: 22, implementing: 38, done: 46 }
 const row = Object.fromEntries(
   MOMENTS.map(m => {
-    const phase = planPhase(m.plan, m.runs)
+    const phase = m.plan ? planPhase(m.plan, m.runs) : noListPhase(m.runs)
     const working = m.runs.filter(r => r.status === 'running').length
-    const pct = Math.round((phase.isFinished ? 1 : phase.done / phase.total) * 100)
+    const title = m.plan ? m.plan.title : `${working} working · ${m.runs.length - working} done`
+    const pct = Math.round((phase.isFinished ? 1 : phase.total ? phase.done / phase.total : 0) * 100)
     const agent = m.runs.filter(r => r.status === 'running').at(-1)
-    return [m.id, { bar: planBarSvg(m.plan.title, phase, working, 330), label: phase.label, pct, working, isFinished: phase.isFinished, context: CONTEXTS[m.id] ?? 30, line: agent ? `Agent(${agent.label || runTitle(agent, m.plan)})` : 'All 5 tasks are complete and the branch review is clean.' }]
+    return [m.id, { title: m.plan && title.length > 28 ? title.slice(0, 27) + '…' : title, bar: planBarSvg(title, phase, working, 330), label: m.plan ? phase.label : '', pct, working: m.plan ? working : 0, isFinished: phase.isFinished, context: CONTEXTS[m.id] ?? 30, line: agent ? `Agent(${agent.label || runTitle(agent, m.plan)})` : 'All 5 tasks are complete and the branch review is clean.' }]
   }),
 )
 const rowIcons = {

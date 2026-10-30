@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { Plan, Run } from '../types'
 import { TYPE_PALETTE, agentRowSvg, colorOf, desktopPaneItems, bar, contextBarSvg, contextRingSvg, fmtTime, fmtTokens, hourglassSvg, runRole, runTitle, taskRowSvg } from './art'
-import { agentRowHeight, finishedLine, planGroups } from './art'
+import { agentRowHeight, finishedLine, planGroups, stepsText } from './art'
 
 const plan: Plan = {
   path: 'docs/plans/x.md',
@@ -148,4 +148,11 @@ test('finishedLine', () => {
   const done = run({ role: 'other', task: null, type: 'Explore', label: 'Map the API routes', status: 'done', startedAt: 0, endedAt: 31_000, costUsd: 0.01 })
   expect(finishedLine(done, 40_000)).toBe('✓ Map the API routes  Explore · 0:31 · ≈$0.01')
   expect(finishedLine({ ...done, status: 'failed' }, 40_000).startsWith('✗ ')).toBe(true)
+})
+
+test('stepsText: a checklist when the agent keeps one, else the steps it has taken', () => {
+  expect(stepsText(run({ stepDone: 3, stepTotal: 5, stepNote: 'Writing the tests', steps: 20 }))).toBe('3/5 · Writing the tests')
+  expect(stepsText(run({ steps: 14 }))).toBe('14 steps')
+  expect(stepsText(run({ steps: 1 }))).toBe('1 step')
+  expect(stepsText(run({}))).toBe('')
 })

@@ -9,6 +9,8 @@ superpowers.
 Mockup: https://claude.ai/artifact/A1iEaeiJZzD4o5Qe1y6F68 (approved by the
 owner on 2026-10-30).
 
+Built in 0.4.0 (plan `docs/superpowers/plans/2026-10-30-agent-crew-everyday.md`).
+
 ## Why
 
 The owner's own workflow is superpowers, but the mod is now public

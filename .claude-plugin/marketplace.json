@@ -7,7 +7,7 @@
       "name": "agent-crew",
       "source": "./plugins/agent-crew",
       "description": "Agents side panel that follows a superpowers plan and every subagent, in pixel-crab style, plus a row above the prompt: progress, model, branch, context, cache countdown.",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "category": "mod"
     }
   ]

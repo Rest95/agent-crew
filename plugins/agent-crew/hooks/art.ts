@@ -92,7 +92,9 @@ export function runRole(run: Run): string {
 
 export const runModel = (run: Run): string => (run.effort ? `${modelName(run.model)} · ${run.effort}` : modelName(run.model))
 
-export const stepsText = (run: Run): string => (run.stepTotal ? `${run.stepDone ?? 0}/${run.stepTotal}${run.stepNote ? ' · ' + run.stepNote : ''}` : '')
+/** Its checklist (`3/5 · Writing the tests`) when it keeps one; else how many steps it has taken. */
+export const stepsText = (run: Run): string =>
+  run.stepTotal ? `${run.stepDone ?? 0}/${run.stepTotal}${run.stepNote ? ' · ' + run.stepNote : ''}` : run.steps ? `${run.steps} step${run.steps === 1 ? '' : 's'}` : ''
 
 // ---------------------------------------------------------------------------
 // Terminal
@@ -293,6 +295,8 @@ export const AGENT_ROW_HEIGHT = 66
 /** A running agent with an action line is one line taller. */
 const ACTION_LINE = 14
 export const ACTION_COLOR = '#e8c66a'
+/** The desktop draws on light and dark grounds: a deeper amber that reads on both. */
+const ACTION_COLOR_APP = '#c48a12'
 const showsAction = (run: Run): boolean => run.status === 'running' && Boolean(run.action)
 export const agentRowHeight = (run: Run): number => AGENT_ROW_HEIGHT + (showsAction(run) ? ACTION_LINE : 0)
 
@@ -310,7 +314,7 @@ export function agentRowSvg(width: number, run: Run, plan: Plan | null, now: num
   const fillW = Math.round(barW * (progress ?? ctx / 100))
   return svg(width, H, `${runCrab(0, 14, run)}
 <text class="t" x="42" y="18" font-family="${FONT}" font-size="13" font-weight="600">${xml(fitText(runTitle(run, plan), 13, barW))}</text>
-${dy ? `<text x="42" y="33" font-family="${FONT}" font-size="11" fill="${ACTION_COLOR}">${xml(fitText(run.action ?? '', 11, barW))}</text>` : ''}
+${dy ? `<text x="42" y="33" font-family="${FONT}" font-size="11" fill="${ACTION_COLOR_APP}">${xml(fitText(run.action ?? '', 11, barW))}</text>` : ''}
 <text x="42" y="${34 + dy}" font-family="${FONT}" font-size="11"><tspan fill="${color}" font-weight="600">${xml(runRole(run))}</tspan><tspan class="s"> ${xml(meta)}</tspan></text>
 ${steps && stepsW > 30 ? `<text class="t" x="42" y="${49 + dy}" font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${xml(fitText(steps, 11, stepsW))}</text>` : ''}
 <text class="s" x="${42 + barW}" y="${49 + dy}" text-anchor="end" font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${stats}</text>

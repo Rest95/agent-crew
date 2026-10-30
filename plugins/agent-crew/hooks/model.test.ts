@@ -427,8 +427,14 @@ test('rowFit: what it picks always fits, down to a narrow window', () => {
   const short = { ...sample, progress: { working: 2, done: 1, percent: '33%' } }
   const none = { ...sample, progress: null, branch: null, context: null }
   for (const content of [sample, short, none]) {
-    for (let columns = 60; columns <= 220; columns++) expect(rowWidth(rowFit(columns, content), content)).toBeLessThanOrEqual(columns)
+    for (let columns = 46; columns <= 220; columns++) expect(rowWidth(rowFit(columns, content), content)).toBeLessThanOrEqual(columns)
   }
+})
+
+test('rowFit: in the narrowest windows the plan name goes last', () => {
+  expect(rowFit(58, sample)).toMatchObject({ titleMax: 12, effort: false })
+  expect(rowFit(57, sample).titleMax).toBe(0)
+  expect(rowFit(50, sample)).toMatchObject({ titleMax: 0, bar: false })
 })
 
 test('rowFit: a short branch and title keep more', () => {

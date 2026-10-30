@@ -1149,7 +1149,7 @@ export const register: Register = (on, options) => {
           ) : (
             <Box flexDirection="row" columnGap={1}>
               <Text wrap="truncate-end" color={planColor}>●</Text>
-              <Text wrap="truncate-end" bold>{shorten(plan.title, show.titleMax)}</Text>
+              {show.titleMax > 0 && <Text wrap="truncate-end" bold>{shorten(plan.title, show.titleMax)}</Text>}
               {show.bar && <Text wrap="truncate-end" color={planColor}>{bar(percent, 16)}</Text>}
               <Text wrap="truncate-end" bold>{phase.label}</Text>
               <Text wrap="truncate-end" dimColor>{`${percent}%`}</Text>

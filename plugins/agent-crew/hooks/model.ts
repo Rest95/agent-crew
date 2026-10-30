@@ -339,6 +339,7 @@ const ROW_STEPS: readonly RowShow[] = [
   { titleMax: 18, bar: false, working: false, branch: false, contextBar: false, effort: true },
   { titleMax: 12, bar: false, working: false, branch: false, contextBar: false, effort: true },
   { titleMax: 12, bar: false, working: false, branch: false, contextBar: false, effort: false },
+  { titleMax: 0, bar: false, working: false, branch: false, contextBar: false, effort: false },
 ]
 
 const columnsIn = (s: string): number => [...s].reduce((n, ch) => n + columnsOf(ch), 0)
@@ -350,7 +351,8 @@ export function rowWidth(show: RowShow, c: RowContent): number {
   if (p && 'title' in p) {
     const bar = show.bar ? ROW_BAR + 1 : 0
     const working = show.working && p.working > 0 ? 1 + columnsIn(`· ${p.working} working`) : 0
-    pieces.push(2 + Math.min(columnsIn(p.title), show.titleMax) + 1 + bar + columnsIn(p.label) + 1 + columnsIn(p.percent) + working)
+    const title = show.titleMax > 0 ? Math.min(columnsIn(p.title), show.titleMax) + 1 : 0
+    pieces.push(2 + title + bar + columnsIn(p.label) + 1 + columnsIn(p.percent) + working)
   } else if (p) {
     const text = show.effort ? `${p.working} working · ${p.done} done` : `${p.working} working`
     pieces.push(2 + columnsIn(text) + (show.bar ? 1 + ROW_BAR + 1 + columnsIn(p.percent) : 0))

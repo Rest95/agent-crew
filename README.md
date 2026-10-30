@@ -1,121 +1,212 @@
-# agent-crew
+<p align="center">
+  <img src="plugins/agent-crew/.claude-plugin/icon.png" alt="agent-crew icon: three pixel crabs" width="120">
+</p>
 
-A Claude Code mod: an **Agents** side panel for any session where Claude sends subagents to work. For each agent it shows **what it is doing** right now (`✎ Editing lib/export/csv.ts`, `⌕ Reading src/auth/session.ts`), **how far along it is** and **what it has cost**. When Claude keeps a task list, that list becomes the plan, with each agent under its task. With a [superpowers](https://github.com/anthropics/claude-plugins-official) plan running, it follows the plan and shows whether each agent is implementing, reviewing, fixing or doing the final review, drawn as pixel crabs. It opens by itself; there is no command to run.
+<h1 align="center">agent-crew</h1>
 
-## Screenshots
+<p align="center">
+  <strong>See what every subagent is doing, how far along it is and what it costs.</strong><br>
+  A live side panel and status row for <a href="https://code.claude.com/docs">Claude Code</a>. No setup, no new commands to learn.
+</p>
 
-Drawn by the mod's own code from sample sessions (`bun scripts/preview.ts`).
+<p align="center">
+  <a href="https://github.com/Rest95/agent-crew/blob/main/plugins/agent-crew/.claude-plugin/plugin.json"><img alt="Version" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FRest95%2Fagent-crew%2Fmain%2Fplugins%2Fagent-crew%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=8f8cf4"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-5fbf8f"></a>
+  <img alt="Tested on Claude Code 2.1.312 to 2.1.314" src="https://img.shields.io/badge/Claude%20Code-2.1.312%E2%80%932.1.314-e0846b">
+</p>
 
-**Any session**
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#a-closer-look">A closer look</a> ·
+  <a href="#options">Options</a> ·
+  <a href="#with-superpowers-plans">Superpowers</a> ·
+  <a href="#troubleshooting">Troubleshooting</a>
+</p>
 
-<table>
-  <tr>
-    <td><img src="docs/screenshots/everyday-list.png" alt="The Agents panel when Claude keeps a task list: the prompt as the heading, Tasks 1/4, and under task 2 two agents, each with what it is doing (editing a file, searching), its type, model, time, cost and progress" width="480"></td>
-    <td><img src="docs/screenshots/everyday-agents.png" alt="The Agents panel with no task list: 3 agents, 2 working, 1 done, a bar of agents finished, each working agent with what it is doing and its progress, and the finished one folded to a line" width="480"></td>
-  </tr>
-  <tr>
-    <td align="center">Claude keeps a task list</td>
-    <td align="center">No task list</td>
-  </tr>
-  <tr>
-    <td><img src="docs/screenshots/everyday-desktop.png" alt="The task-list view in the desktop app, with pixel crabs and a View link per agent" width="400"></td>
-    <td></td>
-  </tr>
-  <tr>
-    <td align="center">Desktop app, task list</td>
-    <td></td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/screenshots/hero.png" alt="Claude Code with agent-crew: the chat on the left, a row above the prompt showing Tasks 1/4, the model, branch, context and cache countdown, and on the right the Agents panel with two agents under the task in progress, each with its current action, model, time, cost and steps">
+  <br>
+  <sub>A real session on a sample project, with Claude's task tools turned on.</sub>
+</p>
 
-**With a superpowers plan**
+## Why
 
-<table>
-  <tr>
-    <td><img src="docs/screenshots/panel-terminal.png" alt="The Agents panel in the terminal: the plan's title, file and progress bar, a line, then the tasks; Task 4 is open with its implementer, named, its role, model, time, cost and step bar" width="480"></td>
-    <td><img src="docs/screenshots/panel-desktop.png" alt="The same panel in the desktop app, with pixel crabs for each agent and a View link" width="400"></td>
-  </tr>
-  <tr>
-    <td align="center">Terminal, mid-plan</td>
-    <td align="center">Desktop app, mid-plan</td>
-  </tr>
-  <tr>
-    <td><img src="docs/screenshots/panel-done.png" alt="The panel once the plan is done: a full green bar, every task ticked, the whole-branch review and other agents closed" width="480"></td>
-    <td></td>
-  </tr>
-  <tr>
-    <td align="center">Terminal, plan done</td>
-    <td></td>
-  </tr>
-</table>
-
-## What it shows
-
-- **What each agent is doing**: a live line under its name from its latest tool call (`✎ Editing`, `⌕ Reading`, `⌕ Searching`, `▶ Running`, `⇣ Fetching`, `↳ Starting`), in every view.
-- **How far along each agent is**: its own task list when it keeps one (`3/5 · Writing the tests`, a solid bar); otherwise the steps it has taken (`14 steps`) beside its context fill. Superpowers implementers report steps through the `step` tool instead.
-- **What each agent costs**: an estimate from its tokens at list prices, beside its model and time.
-- **Claude's task list as the plan**: when the main conversation keeps a task list, the panel shows your prompt as the heading, `Tasks n/N`, and the tasks; each agent sits under the task in progress when it started (agents started before the list, under **Other agents**). When the list is done, the next agent goes back to the view without a list. Claude only keeps a task list when Claude Code gives it the task tools: on current builds (2.1.314) that takes `CLAUDE_CODE_ENABLE_TASKS=true` and `CLAUDE_CODE_ENABLE_TODO_TOOLS=true` (in your shell, or under `env` in `~/.claude/settings.json`); without them you get the view without a list.
-- **No task list**: `3 agents · 2 working · 1 done`, a bar of agents finished, the working agents, then the finished ones folded to one line each.
-- **Plan view** while superpowers runs a plan (subagent-driven or inline): the plan's title and file, a progress bar (`Tasks 2/5`, then `Review 5/5`, then `Done`), cost, tokens and time; a line; then **one list of tasks** (✓ complete, ● current, ◷ waiting). Each task holds its agents and opens or closes on a click; the current task starts open. Inside, each agent by its own name (the label Claude gave it), then its role in its colour, model, status, time, cost and findings; a running agent adds its bar and step. **Whole branch** holds the final review, **Other agents** the agents outside the plan.
-- **Progress from the ledger**: done tasks come from superpowers' `progress.md`, found by the workspace's `plan-path` marker even when a script's output was captured, and read again every few seconds. `/crew` with no plan showing picks up the plan in progress.
-- **No agent list under the prompt**: the mod blanks Claude Code's own rows there, since the panel shows them. `/tasks` and `↓ to manage` still work. Turn this off with `hide_agent_list` (see Options).
-- **Click an agent** in the panel to put its transcript in the main view, as picking it in Claude Code's own agent list does; click it again, or `← Back to main`, to return. An agent that has left Claude Code's list can no longer be shown, and a toast says so.
-- Roles by the labels superpowers gives its agents:
-
-  | Label | Shown as |
-  | --- | --- |
-  | `Implement Task N: …` | implementing (blue engineer) |
-  | the task's implementer again | fixing · round R (orange engineer) |
-  | `Review Task N (spec + quality)` | reviewing (amber detective) |
-  | `Re-review Task N fix round R` | re-reviewing · round R (orange detective) |
-  | `Review code changes`, once every task is complete | final review (violet astronaut) |
-  | anything else | its agent type, in a colour per type (Explore teal, general-purpose rose; plain crab, Explore wears a pirate hat) |
-
-Task progress comes from the plan's `### Task N:` headings and superpowers' progress ledger (`Task N: complete`), so it survives compaction.
-
-**Step counters.** The `step` tool joins a session only when the first superpowers implementer starts, so other sessions never carry it. When an implementer starts, the mod adds one paragraph to its instructions asking it to report its steps with the `step` tool (`mcp__agent-crew__step`); its row then shows `2/5 · reversal`. No other agent's instructions change, and no agent's model does. Costs are estimates from token counts at list prices.
-
-## The row above the prompt
-
-One row sums up the session, in place of a separate band and status line:
-
-<img src="docs/screenshots/row.png" alt="The row above the prompt: plan title, bar, Tasks 3/5, 60% and 1 working; then Opus 5.5 · high, the branch, the context bar at 38% and the cache countdown at 15:00 in an amber frame">
-
-
-- **Total progress**: while a plan or Claude's task list runs, its title and bar (`Tasks 3/5`) and how many agents are working; agents without either, `2 working · 1 done` with a bar of the ones finished; nothing when nothing runs. A finished plan shows `Done` until something else runs.
-- **Model and effort** of the main session (`Opus 5.5 · high`), the git **branch** (none outside a repository), and the **context** fill (amber from 65%, red from 85%).
-- **Prompt-cache countdown** from Claude's last answer (1-hour cache): `…` while Claude works, a frame around the row that is white at rest, amber at 20 minutes left and red at 10, and a notification at 10 and 5 minutes left (Claude Code's own notification, so it reaches the phone too; a toast when it is not delivered).
-- `/crew row` hides or shows it. Narrow windows drop the branch first, then the bars.
-
-## Options
-
-In `/config`, or under `pluginConfigs` in `~/.claude/settings.json`:
-
-| Option | Default | What it does |
-| --- | --- | --- |
-| `open_panel` | on | Opens the panel when a subagent starts. Off: open it with `/crew`. |
-| `hide_agent_list` | on | Hides Claude Code's agent list under the prompt. Off: the list stays. Takes effect in new sessions. |
-
-The row above the prompt is hidden and shown with `/crew row`.
+When Claude sends subagents off to work, you get a spinner and a list of names. agent-crew shows you the work itself: which file each agent is touching, how far it has got, and how much it has spent, so you can tell at a glance whether things are moving or stuck.
 
 ## Install
+
+In Claude Code:
 
 ```
 /plugin marketplace add Rest95/agent-crew
 /plugin install agent-crew@agent-crew
 ```
 
-Restart Claude Code to load it (an update needs a restart too). It replaces claude-kit's session-band and a custom status line; uninstall or switch those off to avoid showing things twice. Claude Code docks the panel beside the chat and opens it unasked only when the terminal is at least 144 columns wide; `/crew` opens or closes it by hand at any width.
+Restart Claude Code to load it. The panel opens by itself the next time a subagent starts. Updates need a restart too.
 
-## Develop
+## Features
+
+- **What each agent is doing, live.** A line under its name from its latest tool call: `✎ Editing lib/csv.ts`, `⌕ Reading src/auth.ts`, `▶ Running npm test`.
+- **How far along it is.** Its own checklist when it keeps one (`3/5 · Writing the tests`), otherwise the steps it has taken (`14 steps`) beside its context fill.
+- **What it costs.** A running estimate per agent, plus totals for the session.
+- **Your work as a plan.** When Claude keeps a task list, the panel shows your prompt, a `Tasks 1/4` bar and each agent under its task.
+- **One row above the prompt.** Progress, model and effort, git branch, context fill and a prompt-cache countdown with a warning before it expires.
+- **Click to open.** Click an agent to see its transcript in the main view.
+- **Works in the background.** It never slows a tool call, and it makes no network calls: everything stays on your machine.
+
+## A closer look
+
+### Any session
+
+| When Claude keeps a task list | When it just sends agents out |
+| --- | --- |
+| <img src="docs/screenshots/everyday-list.png" alt="The panel with a task list: the prompt as the heading, Tasks 1/4, and two agents under task 2, each with what it is doing, its type, model, time, cost and progress" width="440"> | <img src="docs/screenshots/everyday-agents.png" alt="The panel with no task list: 3 agents, 2 working, 1 done, a bar of agents finished, each working agent with what it is doing, and the finished one folded to a line" width="440"> |
+
+Each action follows the agent's latest tool call, and finished agents fold down to one line. The bar counts tasks when there's a task list, and finished agents when there isn't.
+
+### The row above the prompt
+
+<img src="docs/screenshots/row.png" alt="The row above the prompt: plan title, bar, Tasks 3/5, 60% and 1 working; then Opus 5.5 · high, the branch, the context bar at 38% and the cache countdown at 15:00 in an amber frame">
+
+| Piece | What it shows |
+| --- | --- |
+| Progress | The task list or plan with its bar, or `2 working · 1 done` |
+| Model | The main session's model and effort |
+| Branch | The current git branch |
+| Context | How full the context is: amber from 65%, red from 85% |
+| Cache | Time left on the prompt cache, from Claude's last answer |
+
+The frame is white at rest, amber with 20 minutes of cache left and red with 10. You also get a notification at 10 and 5 minutes. Narrow windows drop the branch first, then the bars.
+
+### In the desktop app
+
+<img src="docs/screenshots/everyday-desktop.png" alt="The task-list view in the desktop app, with a pixel crab and a View link for each agent" width="400">
+
+The desktop panel carries the same information, drawn with the crew of pixel crabs.
+
+<sub>The images in this section are drawn by the mod's own code from sample sessions (`bun scripts/preview.ts`).</sub>
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `/crew` | Opens or closes the panel. With no plan showing, picks up a superpowers plan in progress. |
+| `/crew row` | Hides or shows the row above the prompt. |
+
+## Options
+
+Set these in `/config`, or under `pluginConfigs` in `~/.claude/settings.json`.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `open_panel` | on | Opens the panel when a subagent starts. Off: open it with `/crew`. |
+| `hide_agent_list` | on | Hides Claude Code's own agent list under the prompt, since the panel shows the same agents. Off: the list stays. Takes effect in new sessions. |
+
+## How it works
+
+agent-crew is a Claude Code mod. It listens to tool calls and subagent events, and draws the panel and row from them.
+
+- **Actions and steps** come from each agent's own tool calls, matched by agent id.
+- **Tasks** come from Claude's `TaskCreate`, `TaskUpdate` and `TodoWrite` calls in the main conversation. A subagent's own list counts as its progress and never touches yours.
+- **Placement** is decided when an agent starts: it goes under the task in progress, or the best match by name when several are. Agents outside any task go under **Other agents**.
+- **Costs** are estimates from token counts at list prices, not your bill.
+
+Agents' instructions and models are left alone. The one exception is superpowers implementers, described below.
+
+## With superpowers plans
+
+When a [superpowers](https://github.com/anthropics/claude-plugins-official) plan runs, subagent-driven or inline, the panel follows the plan: its title and file, `Tasks 2/5`, then `Review 5/5`, then `Done`, with each agent's role in the task.
+
+| Terminal | Desktop app |
+| --- | --- |
+| <img src="docs/screenshots/panel-terminal.png" alt="The panel following a superpowers plan: its title, file and bar, then the tasks, with Task 4 open and its implementer's name, role, model, time, cost and step bar" width="440"> | <img src="docs/screenshots/panel-desktop.png" alt="The same plan in the desktop app, with pixel crabs for each agent" width="380"> |
+
+<sub>Drawn by the mod's own code from a sample plan.</sub>
+
+<details>
+<summary>How agents get their roles</summary>
+
+| Label Claude gives the agent | Shown as |
+| --- | --- |
+| `Implement Task N: …` | implementing (blue engineer) |
+| The task's implementer again, after a review found something | fixing · round R (orange engineer) |
+| `Review Task N (spec + quality)` | reviewing (amber detective) |
+| `Re-review Task N fix round R` | re-reviewing · round R (orange detective) |
+| `Review code changes`, once every task is complete | final review (violet astronaut) |
+| Anything else | its agent type, with a colour per type |
+
+</details>
+
+<details>
+<summary>Where plan progress comes from</summary>
+
+Tasks come from the plan's `### Task N:` headings, and completed tasks from superpowers' ledger (`Task N: complete` in `progress.md`), so progress survives compaction. The ledger is read again every few seconds.
+
+To show step counters, the mod adds one paragraph to an implementer's instructions, asking it to report steps with the `step` tool. That tool joins a session only when the first implementer starts, so other sessions never carry it.
+
+</details>
+
+When a plan is running it takes priority over Claude's task list. Once it's finished, it gives way to a task list still at work.
+
+## Troubleshooting
+
+<details>
+<summary>The panel didn't open</summary>
+
+Claude Code opens the panel by itself only when the terminal is at least 144 columns wide. Use `/crew` to open it at any width. Check that `open_panel` is on, too.
+
+</details>
+
+<details>
+<summary>I never see the task-list view</summary>
+
+Claude only keeps a task list when Claude Code offers it the task tools. On current builds (2.1.314) that takes two environment variables, in your shell or under `env` in `~/.claude/settings.json`:
 
 ```
-claude plugin test plugins/agent-crew
-claude plugin validate plugins/agent-crew
-bun scripts/preview.ts > preview/index.html   # the panel at three moments, drawn by hooks/art.ts
+CLAUDE_CODE_ENABLE_TASKS=true
+CLAUDE_CODE_ENABLE_TODO_TOOLS=true
 ```
 
-Design and plan: `docs/superpowers/`.
+Without them you get the view without a task list, which shows every agent the same way.
+
+</details>
+
+<details>
+<summary>I want Claude Code's agent list back</summary>
+
+Turn off `hide_agent_list` and start a new session. `/tasks` and `↓ to manage` work either way.
+
+</details>
+
+<details>
+<summary>An agent says its transcript isn't available</summary>
+
+Claude Code can only show agents still in its own list. Once an agent has left that list, the panel says so instead.
+
+</details>
+
+<details>
+<summary>The cost doesn't match my bill</summary>
+
+Costs are estimates from token counts at list prices. A model missing from the mod's price table uses a default rate.
+
+</details>
+
+## Development
+
+```
+claude plugin test plugins/agent-crew       # the test suite
+claude plugin validate plugins/agent-crew   # what the engine would refuse
+bun scripts/preview.ts > preview/index.html # every view, drawn by hooks/art.ts
+```
+
+The logic lives in `hooks/model.ts`, the drawing in `hooks/art.ts` and the wiring in `hooks/register.tsx`. Designs and plans are in [`docs/superpowers/`](docs/superpowers/).
 
 ## Credits
 
-The crab sprites and costumes are adapted from savvy-progress in [claude-kit](https://github.com/johnnyvizz/claude-kit) (MIT, © 2026 johnnyvizz). See `LICENSE`.
+The crab sprites and costumes are adapted from savvy-progress in [claude-kit](https://github.com/johnnyvizz/claude-kit) (MIT, © 2026 johnnyvizz). See [`LICENSE`](LICENSE).
+
+## License
+
+[MIT](LICENSE)

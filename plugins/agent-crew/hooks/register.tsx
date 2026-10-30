@@ -3,14 +3,13 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Checklist, Main, Plan, Run, TaskCall } from '../types'
 import {
-  ACCENT,
   AGENT_ROW_HEIGHT,
   ALERT_COLOR,
   BAR_HEIGHT,
   CACHE_COLOR,
-  DONE_COLOR,
-  ACTION_COLOR,
   GLYPH,
+  THEME,
+  levelTheme,
   finishedLine,
   noListHeading,
   noListPhase,
@@ -27,7 +26,6 @@ import {
   contextBarSvg,
   contextRingSvg,
   hourglassSvg,
-  levelColor,
   modelName,
   bar,
   colorOf,
@@ -885,7 +883,7 @@ export const register: Register = (on, options) => {
       const color = colorOf(r)
       const progress = progressOf(r)
       const steps = stepsText(r)
-      const mark = r.status === 'failed' ? 'red' : r.status === 'done' ? 'green' : color
+      const mark = r.status === 'failed' ? THEME.failed : r.status === 'done' ? THEME.done : color
       const name = [
         <Text key="mark" color={color}>
           {'  ▣ '}
@@ -914,7 +912,7 @@ export const register: Register = (on, options) => {
           {r.status === 'running' && r.action && (
             <Text wrap="truncate-end">
               {'    '}
-              <Text color={ACTION_COLOR}>{r.action}</Text>
+              <Text color={THEME.action}>{r.action}</Text>
             </Text>
           )}
           <Text wrap="truncate-end">
@@ -946,14 +944,14 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column">
           {backButton}
           <Box key="head" flexDirection="column">
-            <Text bold color={ACCENT} wrap="truncate-end">
+            <Text bold color={THEME.accent} wrap="truncate-end">
               {plan.title}
             </Text>
             <Text dimColor wrap="truncate-end">
               {plan.path}
             </Text>
             <Text wrap="truncate-end">
-              <Text color={phase.isFinished ? DONE_COLOR : ACCENT}>{bar(percent, 24)}</Text> <Text bold>{phase.label}</Text>{' '}
+              <Text color={phase.isFinished ? THEME.done : THEME.accent}>{bar(percent, 24)}</Text> <Text bold>{phase.label}</Text>{' '}
               <Text dimColor>{`${percent}%`}</Text>
             </Text>
             <Text dimColor>{`≈${fmtCost(cost)} · ${fmtTokens(tokens)} tokens · ${fmtTime(span)}`}</Text>
@@ -972,7 +970,7 @@ export const register: Register = (on, options) => {
                   ◇
                 </Text>
               ) : g.state === 'done' ? (
-                <Text key="m" color="green">
+                <Text key="m" color={THEME.done}>
                   {GLYPH.done}
                 </Text>
               ) : g.state === 'current' ? (
@@ -980,14 +978,14 @@ export const register: Register = (on, options) => {
                   {GLYPH.running}
                 </Text>
               ) : (
-                <Text key="m" color={ACCENT}>
+                <Text key="m" color={THEME.accent}>
                   {GLYPH.waiting}
                 </Text>
               )
             const name =
               g.kind === 'task' && g.state === 'waiting' && g.n !== null ? (
                 <Text key="n">
-                  <Text color={ACCENT}>{`${g.n}.`}</Text> {g.name.slice(String(g.n).length + 2)}
+                  <Text color={THEME.accent}>{`${g.n}.`}</Text> {g.name.slice(String(g.n).length + 2)}
                 </Text>
               ) : (
                 <Text key="n" bold={g.state === 'current'}>
@@ -1044,11 +1042,11 @@ export const register: Register = (on, options) => {
           <Text dimColor>No subagents yet.</Text>
         ) : (
           <Box key="head" flexDirection="column">
-            <Text bold color={ACCENT} wrap="truncate-end">
+            <Text bold color={THEME.accent} wrap="truncate-end">
               {noListHeading(list)}
             </Text>
             <Text wrap="truncate-end">
-              <Text color={noList.isFinished ? DONE_COLOR : ACCENT}>{bar(noListPercent, 24)}</Text> <Text bold>{noList.label}</Text>{' '}
+              <Text color={noList.isFinished ? THEME.done : THEME.accent}>{bar(noListPercent, 24)}</Text> <Text bold>{noList.label}</Text>{' '}
               <Text dimColor>{`${noListPercent}%`}</Text>
             </Text>
             <Text dimColor>{`≈${fmtCost(cost)} · ${fmtTokens(tokens)} tokens · ${fmtTime(span)}`}</Text>
@@ -1063,7 +1061,7 @@ export const register: Register = (on, options) => {
           finished.map(r => {
             // The line is the agent's button, as a running agent's name is.
             const line = [
-              <Text key="mark" color={r.status === 'failed' ? 'red' : 'green'}>
+              <Text key="mark" color={r.status === 'failed' ? THEME.failed : THEME.done}>
                 {`  ${finishedLine(r, now).slice(0, 1)}`}
               </Text>,
               <Text key="rest" dimColor>
@@ -1111,9 +1109,10 @@ export const register: Register = (on, options) => {
     // The frame and its padding take four columns.
     const columns = (e.props.bodyColumns || 120) - 4
     const warn = cache.level === 'alert' ? ALERT_COLOR : cache.level === 'warn' ? WARN_COLOR : null
+    const warnTheme = cache.level === 'alert' ? THEME.alert : cache.level === 'warn' ? THEME.warn : null
     const phase = plan && progress.kind === 'plan' ? planPhase(plan, list) : null
     const percent = phase ? Math.round((phase.isFinished ? 1 : phase.total ? phase.done / phase.total : 0) * 100) : 0
-    const planColor = phase?.isFinished ? DONE_COLOR : ACCENT
+    const planColor = phase?.isFinished ? THEME.done : THEME.accent
     const working = progress.kind === 'none' ? 0 : progress.working
     // Agents without a plan: finished out of all of them.
     const agentsPercent = progress.kind === 'agents' && progress.working + progress.done > 0 ? Math.round((progress.done / (progress.working + progress.done)) * 100) : 0
@@ -1135,11 +1134,11 @@ export const register: Register = (on, options) => {
     const progressPiece =
       progress.kind === 'agents' ? (
         <Box key="progress" flexDirection="row" columnGap={1} flexShrink={1}>
-          <Text wrap="truncate-end" color={ACCENT}>●</Text>
+          <Text wrap="truncate-end" color={THEME.accent}>●</Text>
           <Text bold wrap="truncate-end">
             {show.effort ? `${progress.working} working · ${progress.done} done` : `${progress.working} working`}
           </Text>
-          {show.bar && <Text wrap="truncate-end" color={ACCENT}>{bar(agentsPercent, 16)}</Text>}
+          {show.bar && <Text wrap="truncate-end" color={THEME.accent}>{bar(agentsPercent, 16)}</Text>}
           {show.bar && <Text wrap="truncate-end" dimColor>{`${agentsPercent}%`}</Text>}
         </Box>
       ) : plan && phase ? (
@@ -1169,9 +1168,9 @@ export const register: Register = (on, options) => {
           overflow="hidden"
           paddingX={1}
           columnGap={2}
-          // Always framed: white at rest, amber or red as the cache runs out.
+          // Always framed: the theme's text colour at rest, amber or red as the cache runs out.
           borderStyle="round"
-          borderColor={warn ?? 'white'}
+          borderColor={warnTheme ?? THEME.frame}
         >
           {progressPiece}
           <Box flexGrow={1} flexShrink={1} />
@@ -1193,14 +1192,14 @@ export const register: Register = (on, options) => {
                 (Svg ? (
                   <Svg source={contextBarSvg(main.context)} alt={`context ${main.context}%`} width={80} height={6} />
                 ) : (
-                  <Text wrap="truncate-end" color={levelColor(contextLevel(main.context))}>{bar(main.context, 8)}</Text>
+                  <Text wrap="truncate-end" color={levelTheme(contextLevel(main.context))}>{bar(main.context, 8)}</Text>
                 ))}
               <Text wrap="truncate-end" bold>{`${main.context}%`}</Text>
             </Box>
           )}
           <Box key="cache" flexDirection="row" columnGap={1} flexShrink={0} alignItems="center">
-            {Svg ? <Svg source={hourglassSvg(warn ?? CACHE_COLOR)} alt="cache" width={icon} height={icon} /> : <Text wrap="truncate-end" color={warn ?? CACHE_COLOR}>⧗</Text>}
-            <Text wrap="truncate-end" bold {...(warn ? { color: warn } : {})}>
+            {Svg ? <Svg source={hourglassSvg(warn ?? CACHE_COLOR)} alt="cache" width={icon} height={icon} /> : <Text wrap="truncate-end" color={warnTheme ?? THEME.cache}>⧗</Text>}
+            <Text wrap="truncate-end" bold {...(warnTheme ? { color: warnTheme } : {})}>
               {cache.text}
             </Text>
           </Box>

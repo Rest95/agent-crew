@@ -474,6 +474,10 @@ const RING_MUTED = '#8a8f8c'
 const ring = (color: string, glyph: string): string =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="10" fill="none" stroke="${color}" stroke-width="2"/>${glyph}</svg>`
 
+/** Text and frames paint with theme keys, so they read on the person's theme; the drawings keep the hex values above. */
+export const THEME = { accent: 'suggestion', done: 'success', failed: 'error', action: 'warning', cache: 'planMode', warn: 'warning', alert: 'error', frame: 'text' } as const
+export const levelTheme = (level: 'ok' | 'warn' | 'alert'): string => (level === 'alert' ? THEME.alert : level === 'warn' ? THEME.warn : THEME.done)
+
 export const levelColor = (level: 'ok' | 'warn' | 'alert'): string => (level === 'alert' ? ALERT_COLOR : level === 'warn' ? WARN_COLOR : OK_COLOR)
 
 export const branchIconSvg = (): string =>

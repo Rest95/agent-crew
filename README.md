@@ -53,6 +53,7 @@ Restart Claude Code to load it. The panel opens by itself the next time a subage
 - **Your work as a plan.** When Claude keeps a task list, the panel shows your prompt, a `Tasks 1/4` bar and each agent under its task.
 - **One row above the prompt.** Progress, model and effort, git branch, context fill and a prompt-cache countdown with a warning before it expires.
 - **Click to open.** Click an agent to see its transcript in the main view.
+- **Fits your theme.** Terminal colours follow your Claude Code theme, light or dark.
 - **Works in the background.** It never slows a tool call, and it makes no network calls: everything stays on your machine.
 
 ## A closer look
@@ -77,7 +78,7 @@ Each action follows the agent's latest tool call, and finished agents fold down 
 | Context | How full the context is: amber from 65%, red from 85% |
 | Cache | Time left on the prompt cache, from Claude's last answer |
 
-The frame is white at rest, amber with 20 minutes of cache left and red with 10. You also get a notification at 10 and 5 minutes. When it's tight, the row drops whole pieces rather than cutting them: the working count, then the branch, then the bars.
+The frame is your theme's text colour at rest, amber with 20 minutes of cache left and red with 10. You also get a notification at 10 and 5 minutes. When it's tight, the row drops whole pieces rather than cutting them: the working count, then the branch, then the bars.
 
 ### In the desktop app
 

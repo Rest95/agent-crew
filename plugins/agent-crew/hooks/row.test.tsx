@@ -156,7 +156,7 @@ test('8 minutes left: a red frame', async ($, on) => {
   const w = await midPlan($, on)
   await w.clock.advance(3_600_000 - 480_000)
   const ui = await $.ui.mount(row('terminal'))
-  expect((await ui.find({ key: 'crew-row' }))?.props.borderColor).toBe('#e0846b')
+  expect((await ui.find({ key: 'crew-row' }))?.props.borderColor).toBe('error')
   await ui.unmount()
 })
 
@@ -188,7 +188,7 @@ test('no warning: the frame stays, in white', async ($, on) => {
   const ui = await $.ui.mount(row('terminal'))
   const frame = await ui.find({ key: 'crew-row' })
   expect(frame?.props.borderStyle).toBe('round')
-  expect(frame?.props.borderColor).toBe('white')
+  expect(frame?.props.borderColor).toBe('text')
   await ui.unmount()
 })
 
@@ -406,4 +406,25 @@ test('the row keeps whole pieces when it is tight', async ($, on) => {
   expect(await tight.find({ type: 'Text', text: /^Tasks 0\/3$/ })).toBeDefined()
   expect(await tight.find({ type: 'Text', text: /^[█░]{16}$/ })).toBeDefined()
   await tight.unmount()
+})
+
+test('the row paints with theme colours', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await mainTurn($, 'complete')
+  await bash($, `scripts/sdd-workspace ${PLAN_PATH}`)
+  await spawn($, 't2', 'Implement Task 2: Background jobs')
+  const rest = await $.ui.mount(row('terminal', 150))
+  const dark = ['#8f8cf4', '#5fbf8f', '#4fb3a9', '#e2a94e', '#e0846b', '#4caf6e', 'white', 'green', 'red']
+  for (const t of await rest.findAll({ type: 'Text' })) expect(dark).not.toContain(t.props.color)
+  expect((await rest.find({ type: 'Text', text: /^⧗$/ }))?.props.color).toBe('planMode')
+  expect((await rest.find({ type: 'Text', text: /^[█░]{16}$/ }))?.props.color).toBe('suggestion')
+  expect((await rest.find({ type: 'Text', text: /^[█░]{8}$/ }))?.props.color).toBe('success')
+  await rest.unmount()
+  await w.clock.advance(HOUR - 15 * 60_000)
+  await w.clock.settle()
+  const low = await $.ui.mount(row('terminal', 150))
+  expect((await low.find({ key: 'crew-row' }))?.props.borderColor).toBe('warning')
+  expect((await low.find({ type: 'Text', text: /^⧗$/ }))?.props.color).toBe('warning')
+  await low.unmount()
 })

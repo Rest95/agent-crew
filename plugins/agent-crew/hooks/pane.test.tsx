@@ -131,9 +131,9 @@ test('the panel opens on the terminal background, not a grey fill', async ($, on
 test('terminal: the plan in violet; waiting tasks in normal text with a violet mark', async ($, on) => {
   await midPlan($, on)
   const ui = await $.ui.mount(pane('terminal'))
-  expect((await ui.find({ type: 'Text', text: /^Payments$/ }))?.props.color).toBe('#8f8cf4')
-  expect((await ui.find({ type: 'Text', text: /^◷$/ }))?.props.color).toBe('#8f8cf4')
-  expect((await ui.find({ type: 'Text', text: /^3\.$/ }))?.props.color).toBe('#8f8cf4')
+  expect((await ui.find({ type: 'Text', text: /^Payments$/ }))?.props.color).toBe('suggestion')
+  expect((await ui.find({ type: 'Text', text: /^◷$/ }))?.props.color).toBe('suggestion')
+  expect((await ui.find({ type: 'Text', text: /^3\.$/ }))?.props.color).toBe('suggestion')
   const waiting = await ui.find({ type: 'Text', text: /Queue screen/ })
   expect(waiting).toBeDefined()
   expect(waiting?.props.dimColor).toBeFalsy()
@@ -302,5 +302,38 @@ test('desktop: a finished agent is one line, and opens its transcript', async ($
   expect((await ui.find({ key: 'view-a-t1' }))?.props.label).toMatch(/^✓ One {2}general-purpose/)
   await ui.press({ key: 'view-a-t1' })
   expect(w.views).toEqual([{ agentId: 'a-t1' }])
+  await ui.unmount()
+})
+
+// ---------------------------------------------------------------------------
+// Colours follow the person's theme
+
+// Picked for dark backgrounds: unreadable on a light one, so never painted on terminal text.
+const DARK_ONLY = ['#8f8cf4', '#e8c66a', '#5fbf8f', '#4fb3a9', '#e2a94e', '#e0846b', '#4caf6e', 'white', 'green', 'red']
+
+test('terminal: the panel paints with theme colours', async ($, on) => {
+  world(on)
+  await spawn($, 't1', 'One')
+  await spawn($, 't2', 'Two')
+  await call($, 'Edit', { file_path: '/repo/payments/a.ts' }, 'a-t2')
+  await finish($, 'a-t1')
+  await finish($, 'a-t2', 'error')
+  await spawn($, 't3', 'Three')
+  await call($, 'Edit', { file_path: '/repo/payments/b.ts' }, 'a-t3')
+  const ui = await $.ui.mount(pane('terminal'))
+  expect((await ui.findAll({ type: 'Text', text: /✎ Editing b\.ts/ })).some(t => t.props.color === 'warning')).toBe(true)
+  for (const t of await ui.findAll({ type: 'Text' })) expect(DARK_ONLY).not.toContain(t.props.color)
+  await ui.unmount()
+})
+
+test('terminal: a plan paints with theme colours, done and all', async ($, on) => {
+  const w = world(on)
+  w.files.set(LEDGER, `# SDD ledger — plan: ${PLAN_PATH}\nTask 1: complete\nTask 2: complete\nTask 3: complete\n`)
+  await bash($, `scripts/sdd-workspace ${PLAN_PATH}`)
+  await spawn($, 't1', 'Implement Task 1: API client')
+  await finish($, 'a-t1')
+  const ui = await $.ui.mount(pane('terminal'))
+  expect((await ui.find({ type: 'Text', text: /^█+$/ }))?.props.color).toBe('success')
+  for (const t of await ui.findAll({ type: 'Text' })) expect(DARK_ONLY).not.toContain(t.props.color)
   await ui.unmount()
 })

@@ -150,3 +150,5 @@ text stays), the `N working` count; `N working · M done` shortens to
 
 State shape, how the row measures its width, the exact density thresholds,
 and test cases, within the above.
+
+**Colours** (0.5.2): terminal text and frames paint with Claude Code's theme keys (`THEME` in `art.ts`) so they read on light themes; the frame at rest is the theme's text colour. Role and agent-type colours stay as they are, and the SVG drawings keep their hex values.

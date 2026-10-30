@@ -427,3 +427,57 @@ test('calls arriving together all land', async ($, on) => {
   expect(runs(w).find(r => r.agentId === 'a-t1')?.steps).toBe(2)
   expect(runs(w).find(r => r.agentId === 'a-t2')?.steps).toBe(2)
 })
+
+// ---------------------------------------------------------------------------
+// Options, and the step tool on demand
+
+const FLAG = '/home/me/.claude/plugins/data/agent-crew-agent-crew/agent-list'
+
+test('the panel opens by itself by default', async ($, on) => {
+  const w = world(on)
+  await spawn($, 't1', 'One')
+  expect(w.opened).toEqual(['agent-crew'])
+})
+
+test('with open_panel off, the panel waits for /crew', { options: { open_panel: false } }, async ($, on) => {
+  const w = world(on)
+  await start($)
+  await spawn($, 't1', 'One')
+  await bash($, `scripts/sdd-workspace ${PLAN_PATH}`)
+  expect(w.opened).toEqual([])
+  await $.command.run({ command: 'crew' } as never)
+  expect(w.opened).toEqual(['agent-crew'])
+})
+
+test("Claude Code's agent list stays hidden by default", async ($, on) => {
+  const w = world(on)
+  await start($)
+  await w.clock.settle()
+  expect(w.written.get(FLAG)).toBe('hide')
+})
+
+test("with hide_agent_list off, Claude Code's agent list stays", { options: { hide_agent_list: false } }, async ($, on) => {
+  const w = world(on)
+  await start($)
+  await w.clock.settle()
+  expect(w.written.get(FLAG)).toBe('show')
+})
+
+test('the step tool costs a session nothing until an implementer starts', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await spawn($, 't1', 'Look around')
+  await bash($, `scripts/sdd-workspace ${PLAN_PATH}`)
+  expect(w.registered).toEqual([])
+  await spawn($, 't2', 'Implement Task 1: API client')
+  await spawn($, 't3', 'Implement Task 2: Background jobs')
+  expect(w.registered).toEqual(['step'])
+})
+
+test('a plan carried into a new start keeps its step tool', async ($, on) => {
+  const w = world(on)
+  await bash($, `scripts/sdd-workspace ${PLAN_PATH}`)
+  await start($)
+  await w.clock.settle()
+  expect(w.registered).toEqual(['step'])
+})

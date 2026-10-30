@@ -178,8 +178,44 @@ async function tickRow($: EngineInterface): Promise<void> {
   if (ticks === 0 && main.branch !== null) await readBranch($)
 }
 
+// The `open_panel` option; the module loads again when it changes.
+let opensByItself = true
 const openPane = ($: EngineInterface): void => {
+  if (!opensByItself) return
   void $.ui.open({ id: PANE, title: PANE_TITLE, backgroundColor: PANE_BACKGROUND }).catch(() => undefined)
+}
+
+let stepToolReady = false
+/** The step tool joins the session when an implementer needs it: every other session never carries it. */
+async function ensureStepTool($: EngineInterface): Promise<void> {
+  if (stepToolReady) return
+  await $.tool.register({
+    name: 'step',
+    description:
+      'For implementer subagents of a superpowers plan: report progress on your own task to the Agents panel. ' +
+      'Right after reading your brief, call it with `total` (your plan in 3-8 steps) and `done: 0`; ' +
+      'call it again as each step finishes. Cheap and silent: it only draws a bar.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        done: { type: 'integer', minimum: 0, description: 'Steps finished so far.' },
+        total: { type: 'integer', minimum: 1, description: 'Steps planned; may change if the plan changes.' },
+        note: { type: 'string', description: 'The step in progress, a few words.' },
+      },
+      required: ['done'],
+    },
+    isDeferred: false,
+  })
+  stepToolReady = true
+}
+
+/**
+ * The `hide_agent_list` option, for the `subagentStatusLine` command in settings.json. That command
+ * gets no plugin options or paths, so it reads this file, in the data folder an uninstall removes.
+ */
+async function writeAgentListChoice($: EngineInterface, hide: boolean): Promise<void> {
+  const config = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${await $.env.get('HOME')}/.claude`
+  await $.fs.write(`${config}/plugins/data/agent-crew-agent-crew/agent-list`, hide ? 'hide' : 'show')
 }
 
 /** The newest run of an agent: a resumed implementer has several. */
@@ -428,26 +464,15 @@ async function trackAgentList($: EngineInterface, call: TaskCall, agentId: strin
   })
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  opensByItself = options.open_panel !== false
+  stepToolReady = false
+  const hideAgentList = options.hide_agent_list !== false
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    await $.tool.register({
-      name: 'step',
-      description:
-        'For implementer subagents of a superpowers plan: report progress on your own task to the Agents panel. ' +
-        'Right after reading your brief, call it with `total` (your plan in 3-8 steps) and `done: 0`; ' +
-        'call it again as each step finishes. Cheap and silent: it only draws a bar.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          done: { type: 'integer', minimum: 0, description: 'Steps finished so far.' },
-          total: { type: 'integer', minimum: 1, description: 'Steps planned; may change if the plan changes.' },
-          note: { type: 'string', description: 'The step in progress, a few words.' },
-        },
-        required: ['done'],
-      },
-      isDeferred: false,
-    })
+    // A plan carried over (a reload, a resumed session) may still have implementers to come.
+    if ((await read($, planAtom)) !== null) await ensureStepTool($).catch(() => undefined)
+    void writeAgentListChoice($, hideAgentList).catch(() => undefined)
     await $.command.register({ name: 'crew', description: 'Show or hide the Agents panel; /crew row shows or hides the row above the prompt', argumentHint: '[row]' })
     // Elapsed times tick while something runs; quiet otherwise. Every few seconds the engine's own
     // agent list closes a run whose end never reached the mod (a reload mid-agent).
@@ -580,6 +605,8 @@ export const register: Register = on => {
     // A resumed agent (a fix round of its implementer) keeps its first row and gets a new one.
     const resumed = e.resume?.agentId
     if (resumed) {
+      // A resumed implementer reports its steps too, also after a restart.
+      if ((await read($, planAtom).catch(() => null)) !== null) await ensureStepTool($).catch(() => undefined)
       const started = await next(e)
       if (started.deny !== undefined) return started
       try {
@@ -608,6 +635,7 @@ export const register: Register = on => {
       // Keep the plain row.
     }
     const isImplementer = (kind.role === 'implement' || kind.role === 'fix') && !e.prompt.includes(STEP_TOOL)
+    if (isImplementer) await ensureStepTool($).catch(() => undefined)
     const started = await next(isImplementer ? { ...e, prompt: e.prompt + STEP_BRIEF } : e)
     if (started.deny !== undefined) return started
     try {

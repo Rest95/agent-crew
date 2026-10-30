@@ -57,7 +57,7 @@ Drawn by the mod's own code from sample sessions (`bun scripts/preview.ts`).
 - **No task list**: `3 agents · 2 working · 1 done`, a bar of agents finished, the working agents, then the finished ones folded to one line each.
 - **Plan view** while superpowers runs a plan (subagent-driven or inline): the plan's title and file, a progress bar (`Tasks 2/5`, then `Review 5/5`, then `Done`), cost, tokens and time; a line; then **one list of tasks** (✓ complete, ● current, ◷ waiting). Each task holds its agents and opens or closes on a click; the current task starts open. Inside, each agent by its own name (the label Claude gave it), then its role in its colour, model, status, time, cost and findings; a running agent adds its bar and step. **Whole branch** holds the final review, **Other agents** the agents outside the plan.
 - **Progress from the ledger**: done tasks come from superpowers' `progress.md`, found by the workspace's `plan-path` marker even when a script's output was captured, and read again every few seconds. `/crew` with no plan showing picks up the plan in progress.
-- **No agent list under the prompt**: the mod ships a default `subagentStatusLine` (its `settings.json`) that blanks Claude Code's own rows there, since the panel shows them. `/tasks` and `↓ to manage` still work. To get the rows back, set your own `subagentStatusLine` in `~/.claude/settings.json`; a user setting overrides a plugin's.
+- **No agent list under the prompt**: the mod blanks Claude Code's own rows there, since the panel shows them. `/tasks` and `↓ to manage` still work. Turn this off with `hide_agent_list` (see Options).
 - **Click an agent** in the panel to put its transcript in the main view, as picking it in Claude Code's own agent list does; click it again, or `← Back to main`, to return. An agent that has left Claude Code's list can no longer be shown, and a toast says so.
 - Roles by the labels superpowers gives its agents:
 
@@ -72,7 +72,7 @@ Drawn by the mod's own code from sample sessions (`bun scripts/preview.ts`).
 
 Task progress comes from the plan's `### Task N:` headings and superpowers' progress ledger (`Task N: complete`), so it survives compaction.
 
-**Step counters.** When an implementer starts, the mod adds one paragraph to its instructions asking it to report its steps with the `step` tool (`mcp__agent-crew__step`); its row then shows `2/5 · reversal`. No other agent's instructions change, and no agent's model does. Costs are estimates from token counts at list prices.
+**Step counters.** The `step` tool joins a session only when the first superpowers implementer starts, so other sessions never carry it. When an implementer starts, the mod adds one paragraph to its instructions asking it to report its steps with the `step` tool (`mcp__agent-crew__step`); its row then shows `2/5 · reversal`. No other agent's instructions change, and no agent's model does. Costs are estimates from token counts at list prices.
 
 ## The row above the prompt
 
@@ -85,6 +85,17 @@ One row sums up the session, in place of a separate band and status line:
 - **Model and effort** of the main session (`Opus 5.5 · high`), the git **branch** (none outside a repository), and the **context** fill (amber from 65%, red from 85%).
 - **Prompt-cache countdown** from Claude's last answer (1-hour cache): `…` while Claude works, a frame around the row that is white at rest, amber at 20 minutes left and red at 10, and a notification at 10 and 5 minutes left (Claude Code's own notification, so it reaches the phone too; a toast when it is not delivered).
 - `/crew row` hides or shows it. Narrow windows drop the branch first, then the bars.
+
+## Options
+
+In `/config`, or under `pluginConfigs` in `~/.claude/settings.json`:
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `open_panel` | on | Opens the panel when a subagent starts. Off: open it with `/crew`. |
+| `hide_agent_list` | on | Hides Claude Code's agent list under the prompt. Off: the list stays. Takes effect in new sessions. |
+
+The row above the prompt is hidden and shown with `/crew row`.
 
 ## Install
 

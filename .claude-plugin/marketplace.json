@@ -1,13 +1,18 @@
 {
   "name": "agent-crew",
-  "owner": { "name": "Rest95", "url": "https://github.com/Rest95" },
-  "metadata": { "description": "agent-crew: an Agents side panel and a session row for superpowers plans." },
+  "owner": {
+    "name": "Rest95",
+    "url": "https://github.com/Rest95"
+  },
+  "metadata": {
+    "description": "agent-crew: see what each subagent is doing, how far along it is and what it costs, in a side panel and a row above the prompt."
+  },
   "plugins": [
     {
       "name": "agent-crew",
       "source": "./plugins/agent-crew",
-      "description": "Agents side panel that follows a superpowers plan and every subagent, in pixel-crab style, plus a row above the prompt: progress, model, branch, context, cache countdown.",
-      "version": "0.4.0",
+      "description": "See what each subagent is doing, how far along it is and what it costs, in a side panel and a row above the prompt.",
+      "version": "0.5.0",
       "category": "mod"
     }
   ]

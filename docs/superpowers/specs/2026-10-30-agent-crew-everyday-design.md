@@ -11,6 +11,11 @@ owner on 2026-10-30).
 
 Built in 0.4.0 (plan `docs/superpowers/plans/2026-10-30-agent-crew-everyday.md`).
 
+0.5.0 adds two options, `open_panel` and `hide_agent_list`. The `subagentStatusLine`
+command receives no plugin options or paths (checked in a real session), so the
+mod writes the choice to `agent-list` in the plugin's data folder and the command
+reads it. The `step` tool now registers when the first implementer starts.
+
 ## Why
 
 The owner's own workflow is superpowers, but the mod is now public

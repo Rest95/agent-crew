@@ -21,6 +21,10 @@ export type World = {
   taskIds: number
   /** The TaskCreate stand-in answers `{ result: null }`. */
   taskCreateNull: boolean
+  /** Tools the mod registered. */
+  registered: string[]
+  /** Files the mod wrote. */
+  written: Map<string, string>
   /** Writes to $.state, by key. */
   writes: Map<string, number>
   /** The task tools answer `{ deny }`. */
@@ -73,7 +77,7 @@ const settle = async () => {
 // The engine beneath the mod: files, the Bash tool, agents and the pane, all faked.
 export function world(on: On, files: Record<string, string> = { [PLAN_PATH]: PLAN_TEXT }): World {
   const clock = mock.clock(on, { now: START })
-  const w: World = { writes: new Map(), taskIds: 0, taskCreateNull: false, taskDeny: false, promptRewrite: null, files: new Map(Object.entries(files)), dirs: new Set([WS]), opened: [], openArgs: [], prompts: [], stored: new Map(), stdout: null, context: 34, branch: 'feat/payments', pushes: true, notified: [], toasts: [], sessionModel: 'claude-opus-5-5', gitHangs: false, gitRuns: 0, gitHold: null, holdNextGit: false, agentStatus: new Map(), commands: [], slowFiles: new Set(), mtimes: new Map(), usageHangs: false, views: [], viewDenied: false, clock }
+  const w: World = { registered: [], written: new Map(), writes: new Map(), taskIds: 0, taskCreateNull: false, taskDeny: false, promptRewrite: null, files: new Map(Object.entries(files)), dirs: new Set([WS]), opened: [], openArgs: [], prompts: [], stored: new Map(), stdout: null, context: 34, branch: 'feat/payments', pushes: true, notified: [], toasts: [], sessionModel: 'claude-opus-5-5', gitHangs: false, gitRuns: 0, gitHold: null, holdNextGit: false, agentStatus: new Map(), commands: [], slowFiles: new Set(), mtimes: new Map(), usageHangs: false, views: [], viewDenied: false, clock }
   current = w
   // What the mod writes to $.state, watched on its way to the kit's own store.
   on('state.set', (_$, e, next) => {
@@ -143,7 +147,15 @@ export function world(on: On, files: Record<string, string> = { [PLAN_PATH]: PLA
     return { value: {} } as never
   })
   on('agent.list', () => ({ value: [...w.agentStatus].map(([id, status]) => ({ id, description: '', type: 'general-purpose', status })) }) as never)
-  on('tool.register', () => ({ value: {} }) as never)
+  on('tool.register', (_$, e) => {
+    w.registered.push(String((e as { name?: unknown }).name))
+    return { value: {} } as never
+  })
+  on('fs.write', (_$, e) => {
+    w.written.set(e.path, e.text)
+    return { value: undefined } as never
+  })
+  on('env.get', (_$, e) => ({ value: e.name === 'HOME' ? '/home/me' : undefined }) as never)
   on('settings.read', () => ({ value: { model: 'opus[1m]', modelSettings: { 'claude-opus-5-5': { effortLevel: 'high' } } } }) as never)
   on('session.model', () => ({ value: w.sessionModel }) as never)
   on('session.measure', (_$, e) => ({ changed: (e as { changed: string[] }).changed }) as never)

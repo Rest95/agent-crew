@@ -1,1 +1,6 @@
-{"subagentStatusLine":{"type":"command","command":"grep -oE '\"id\"[[:space:]]*:[[:space:]]*\"[^\"]*\"' | sed -E 's/.*:[[:space:]]*\"([^\"]*)\"/{\"id\":\"\\1\",\"content\":\"\"}/'"}}
+{
+  "subagentStatusLine": {
+    "type": "command",
+    "command": "F=\"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/data/agent-crew-agent-crew/agent-list\"; if [ \"$(cat \"$F\" 2>/dev/null)\" = show ]; then cat >/dev/null; else grep -oE '\"id\"[[:space:]]*:[[:space:]]*\"[^\"]*\"' | sed -E 's/.*:[[:space:]]*\"([^\"]*)\"/{\"id\":\"\\1\",\"content\":\"\"}/'; fi"
+  }
+}

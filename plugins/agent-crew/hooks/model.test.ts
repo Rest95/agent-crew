@@ -360,3 +360,39 @@ test('checklistAsPlan and headingOf', () => {
   expect(headingOf('   ')).toBe("Claude's task list")
   expect(headingOf('y'.repeat(100)).length).toBeLessThanOrEqual(60)
 })
+
+// ---------------------------------------------------------------------------
+// Deferred review minors
+
+test('an empty TodoWrite empties the list', () => {
+  const items = applyTaskCall([], todos([['a', 'in_progress']]))
+  expect(applyTaskCall(items, { tool: 'TodoWrite', input: { todos: [] }, result: {} })).toEqual([])
+  const list = applyMainTaskCall(null, todos([['a', 'in_progress']]), 'first')
+  expect(applyMainTaskCall(list, { tool: 'TodoWrite', input: { todos: [] }, result: {} }, 'x')).toBeNull()
+})
+
+test('describeAction: odd inputs stay one clean line', () => {
+  expect(describeAction('Edit', { file_path: 'a.ts\nb.ts' }, null)).toBe('✎ Editing a.ts')
+  expect(describeAction('Edit', {}, null)).toBe('✎ Editing a file')
+  expect(describeAction('Read', {}, null)).toBe('⌕ Reading a file')
+  expect(describeAction('Bash', {}, null)).toBe('▶ Running a command')
+  expect(describeAction('Agent', {}, null)).toBe('↳ Starting an agent')
+  const wide = describeAction('Bash', { command: '字'.repeat(100) }, null) ?? ''
+  expect(wide.endsWith('…')).toBe(true)
+  expect([...wide].filter(c => c === '字').length).toBeLessThanOrEqual(25)
+  const emoji = describeAction('Bash', { command: '😀'.repeat(100) }, null) ?? ''
+  expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(emoji)).toBe(false)
+})
+
+test('a TaskUpdate that failed changes nothing', () => {
+  const items = applyTaskCall([], create('1', 'A'))
+  expect(applyTaskCall(items, { tool: 'TaskUpdate', input: { taskId: '1', status: 'completed' }, result: { success: false, taskId: '1', updatedFields: [] } })).toBe(items)
+})
+
+test('placeAgent: a tie goes to the task started last', () => {
+  let items = applyTaskCall([], create('1', 'Alpha'))
+  items = applyTaskCall(items, create('2', 'Beta'))
+  items = applyTaskCall(items, updateTask('2', { status: 'in_progress' }))
+  items = applyTaskCall(items, updateTask('1', { status: 'in_progress' }))
+  expect(placeAgent(items, 'nothing in common')).toBe(1)
+})

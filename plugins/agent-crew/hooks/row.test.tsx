@@ -378,3 +378,13 @@ test("the row's agent count has a bar", async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /^50%$/ })).toBeDefined()
   await ui.unmount()
 })
+
+test("the row keeps a superpowers plan over Claude's list", async ($, on) => {
+  await midPlan($, on)
+  await submit($, 'Something else entirely')
+  await call($, 'TaskCreate', { subject: 'A', description: 'd' })
+  const ui = await $.ui.mount(row('terminal'))
+  expect(await ui.find({ type: 'Text', text: /^Payments/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Something else/ })).toBeUndefined()
+  await ui.unmount()
+})

@@ -21,6 +21,12 @@ export type World = {
   taskIds: number
   /** The TaskCreate stand-in answers `{ result: null }`. */
   taskCreateNull: boolean
+  /** Writes to $.state, by key. */
+  writes: Map<string, number>
+  /** The task tools answer `{ deny }`. */
+  taskDeny: boolean
+  /** The prompt.submit stand-in hands back this text, as a hook beneath that rewrote it. */
+  promptRewrite: string | null
   files: Map<string, string>
   dirs: Set<string>
   opened: string[]
@@ -67,12 +73,15 @@ const settle = async () => {
 // The engine beneath the mod: files, the Bash tool, agents and the pane, all faked.
 export function world(on: On, files: Record<string, string> = { [PLAN_PATH]: PLAN_TEXT }): World {
   const clock = mock.clock(on, { now: START })
-  const w: World = { taskIds: 0, taskCreateNull: false, files: new Map(Object.entries(files)), dirs: new Set([WS]), opened: [], openArgs: [], prompts: [], stored: new Map(), stdout: null, context: 34, branch: 'feat/payments', pushes: true, notified: [], toasts: [], sessionModel: 'claude-opus-5-5', gitHangs: false, gitRuns: 0, gitHold: null, holdNextGit: false, agentStatus: new Map(), commands: [], slowFiles: new Set(), mtimes: new Map(), usageHangs: false, views: [], viewDenied: false, clock }
+  const w: World = { writes: new Map(), taskIds: 0, taskCreateNull: false, taskDeny: false, promptRewrite: null, files: new Map(Object.entries(files)), dirs: new Set([WS]), opened: [], openArgs: [], prompts: [], stored: new Map(), stdout: null, context: 34, branch: 'feat/payments', pushes: true, notified: [], toasts: [], sessionModel: 'claude-opus-5-5', gitHangs: false, gitRuns: 0, gitHold: null, holdNextGit: false, agentStatus: new Map(), commands: [], slowFiles: new Set(), mtimes: new Map(), usageHangs: false, views: [], viewDenied: false, clock }
   current = w
   // What the mod writes to $.state, watched on its way to the kit's own store.
   on('state.set', (_$, e, next) => {
     const write = e as { plugin: string; key: string; value: unknown }
-    if (write.plugin === 'agent-crew') w.stored.set(write.key, write.value)
+    if (write.plugin === 'agent-crew') {
+      w.stored.set(write.key, write.value)
+      w.writes.set(write.key, (w.writes.get(write.key) ?? 0) + 1)
+    }
     return next(e)
   })
   on('ui.open', (_$, e) => {
@@ -102,13 +111,14 @@ export function world(on: On, files: Record<string, string> = { [PLAN_PATH]: PLA
   on('ui.panes', () => ({ value: [] }) as never)
   // The task-list tools and a few working tools, as Claude Code answers them.
   on('tool.call', { tool: 'TaskCreate' }, (_$, e) => {
+    if (w.taskDeny) return { deny: 'no' } as never
     if (w.taskCreateNull) return { result: null } as never
     const subject = String((e as { subject?: unknown }).subject ?? '')
     return { result: { task: { id: String(++w.taskIds), subject } } } as never
   })
-  on('tool.call', { tool: 'TaskUpdate' }, (_$, e) => ({ result: { success: true, taskId: String((e as { taskId?: unknown }).taskId), updatedFields: [] } }) as never)
-  on('tool.call', { tool: /^(TodoWrite|Read|Edit|Grep)$/ }, () => ({ result: {} }) as never)
-  on('prompt.submit', (_$, e) => ({ text: (e as { text: string }).text }) as never)
+  on('tool.call', { tool: 'TaskUpdate' }, (_$, e) => (w.taskDeny ? { deny: 'no' } : { result: { success: true, taskId: String((e as { taskId?: unknown }).taskId), updatedFields: [] } }) as never)
+  on('tool.call', { tool: /^(TodoWrite|TaskList|Read|Edit|Grep)$/ }, () => ({ result: {} }) as never)
+  on('prompt.submit', (_$, e) => ({ text: w.promptRewrite ?? (e as { text: string }).text }) as never)
   on('tool.call', { tool: 'Bash' }, (_$, e) => {
     const command = String((e as { command?: unknown }).command)
     const stdout = w.stdout ?? (command.includes('sdd-workspace') ? `${WS}\n` : command.includes('task-start') ? `brief: ${WS}/task-2-brief.md\nbase: abc123\n` : '')
@@ -217,8 +227,8 @@ export const call = async ($: Engine, tool: string, input: Record<string, unknow
   return done
 }
 /** The person submits a prompt. */
-export const submit = async ($: Engine, text: string) => {
-  await ($.prompt.submit as (e: unknown) => Promise<unknown>)({ text, wait: false, origin: {} })
+export const submit = async ($: Engine, text: string, kind = 'composer') => {
+  await ($.prompt.submit as (e: unknown) => Promise<unknown>)({ text, wait: false, origin: { kind } })
   await settle()
 }
 export const checklist = (w: World) => (w.stored.get('checklist') ?? null) as Checklist | null

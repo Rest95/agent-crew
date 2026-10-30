@@ -291,7 +291,6 @@ export function totalsSvg(width: number, cost: number, tokens: number, ms: numbe
 
 export const AGENT_ROW_HEIGHT = 66
 
-/** One agent: crab, title, role in its colour, model, steps, stats and a progress line. */
 /** A running agent with an action line is one line taller. */
 const ACTION_LINE = 14
 export const ACTION_COLOR = '#e8c66a'
@@ -300,6 +299,7 @@ const ACTION_COLOR_APP = '#c48a12'
 const showsAction = (run: Run): boolean => run.status === 'running' && Boolean(run.action)
 export const agentRowHeight = (run: Run): number => AGENT_ROW_HEIGHT + (showsAction(run) ? ACTION_LINE : 0)
 
+/** One agent: crab, title, its action while it runs, role in its colour, model, steps, stats and a progress line. */
 export function agentRowSvg(width: number, run: Run, plan: Plan | null, now: number): string {
   const color = colorOf(run)
   const dy = showsAction(run) ? ACTION_LINE : 0
@@ -352,6 +352,7 @@ export type PaneItem =
   | { kind: 'path'; text: string }
   | { kind: 'section'; text: string }
   | { kind: 'inline'; text: string }
+  | { kind: 'line'; key: string; text: string; agentId?: string }
   | { kind: 'finished'; open: boolean; count: number }
   | { kind: 'empty' }
 
@@ -388,7 +389,6 @@ export function planGroups(plan: Plan, runs: readonly Run[]): Group[] {
   return groups
 }
 
-/** A group is open when the person opened it; until then, the current task and a running final review are. */
 /** The no-list heading: how many agents, how many at work, how many done. */
 export const noListHeading = (runs: readonly Run[]): string => {
   const working = runs.filter(r => r.status === 'running').length
@@ -405,6 +405,7 @@ export const noListPhase = (runs: readonly Run[]): { done: number; total: number
 export const finishedLine = (run: Run, now: number): string =>
   `${run.status === 'failed' ? GLYPH.failed : GLYPH.done} ${run.label || run.type}  ${run.type} · ${fmtTime(elapsed(run, now))} · ≈${fmtCost(run.costUsd)}`
 
+/** A group is open when the person opened it; until then, the current task and a running final review are. */
 export const isGroupOpen = (g: Group, open: Readonly<Record<string, boolean>> = {}): boolean =>
   open[g.key] ?? (g.state === 'current' || (g.kind === 'final' && g.runs.some(r => r.status === 'running')))
 
@@ -456,7 +457,7 @@ export function desktopPaneItems(width: number, plan: Plan | null, runs: readonl
   if (running.length > 0) items.push({ kind: 'section', text: `Working · ${running.length}` })
   items.push(...running.map(agent))
   if (finished.length > 0) items.push({ kind: 'finished', open: opts.finishedOpen, count: finished.length })
-  if (opts.finishedOpen) items.push(...finished.map(agent))
+  if (opts.finishedOpen) items.push(...finished.map((r): PaneItem => ({ kind: 'line', key: r.id, text: finishedLine(r, now), ...(r.agentId ? { agentId: r.agentId } : {}) })))
   return items
 }
 

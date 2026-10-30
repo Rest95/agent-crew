@@ -352,3 +352,78 @@ test("a superpowers plan doesn't adopt everyday agents' task numbers", async ($,
   await bash($, `scripts/sdd-workspace ${PLAN_PATH}`)
   expect(runs(w)[0]?.task).toBeNull()
 })
+
+// ---------------------------------------------------------------------------
+// Deferred review minors
+
+test('a fix round starts with a clean slate; a resumed agent drops its old action', async ($, on) => {
+  const w = world(on)
+  await bash($, `scripts/sdd-workspace ${PLAN_PATH}`)
+  await spawn($, 't1', 'Implement Task 1: API client')
+  await call($, 'Edit', { file_path: '/repo/payments/a.ts' }, 'a-t1')
+  await call($, 'TodoWrite', { todos: [{ content: 'a', status: 'pending', activeForm: 'a' }] }, 'a-t1')
+  await finish($, 'a-t1')
+  await spawn($, 'x1', 'Look around')
+  await call($, 'Edit', { file_path: '/repo/payments/b.ts' }, 'a-x1')
+  await finish($, 'a-x1')
+  const resume = (id: string, description: string) => $.agent.spawn({ tool_use_id: id, prompt: 'Again', description, subagentType: 'general-purpose', provider: 'engine', parentModel: 'claude-opus-5-5', background: false, fork: false, resume: { agentId: `a-${id}` } } as never)
+  await resume('t1', 'Implement Task 1: API client')
+  await resume('x1', 'Look around')
+  await w.clock.settle()
+  const fix = runs(w).find(r => r.role === 'fix')
+  expect([fix?.action, fix?.steps, fix?.ownList, fix?.stepSource]).toEqual([undefined, undefined, undefined, undefined])
+  expect(runs(w).find(r => r.agentId === 'a-x1')?.action).toBeUndefined()
+})
+
+test("only the person's prompt heads a list, as it entered", async ($, on) => {
+  const w = world(on)
+  await submit($, 'Add CSV export')
+  await submit($, 'A note from another session', 'peer')
+  await call($, 'TaskCreate', { subject: 'A', description: 'd' })
+  expect(checklist(w)?.heading).toBe('Add CSV export')
+  await call($, 'TaskUpdate', { taskId: '1', status: 'completed' })
+  w.promptRewrite = 'The rewritten prompt'
+  await submit($, 'The typed prompt')
+  await call($, 'TaskCreate', { subject: 'B', description: 'd' })
+  expect(checklist(w)?.heading).toBe('The rewritten prompt')
+})
+
+test('reading a task list writes nothing', async ($, on) => {
+  const w = world(on)
+  const writes = () => (w.writes.get('runs') ?? 0) + (w.writes.get('checklist') ?? 0)
+  await spawn($, 't1', 'One')
+  await w.clock.settle()
+  const before = writes()
+  await call($, 'TaskList', {}, 'a-t1')
+  await call($, 'TaskList', {})
+  expect(writes()).toBe(before)
+})
+
+test('a denied call counts for nothing', async ($, on) => {
+  const w = world(on)
+  on('tool.call', { tool: 'WebSearch' }, () => ({ deny: 'no' }) as never)
+  await withList($)
+  await spawn($, 't1', 'One')
+  await call($, 'Edit', { file_path: '/repo/payments/a.ts' }, 'a-t1')
+  await call($, 'WebSearch', { query: 'x' }, 'a-t1')
+  expect(runs(w)[0]?.steps).toBe(1)
+  w.taskDeny = true
+  await call($, 'TaskUpdate', { taskId: '1', status: 'completed' })
+  await call($, 'TaskCreate', { subject: 'Own', description: 'd' }, 'a-t1')
+  expect(checklist(w)?.items[0]?.status).toBe('in_progress')
+  expect(runs(w)[0]?.ownList).toBeUndefined()
+})
+
+test('calls arriving together all land', async ($, on) => {
+  const w = world(on)
+  await spawn($, 't1', 'One')
+  await spawn($, 't2', 'Two')
+  await Promise.all([
+    call($, 'Edit', { file_path: '/repo/payments/a.ts' }, 'a-t1'),
+    call($, 'Read', { file_path: '/repo/payments/b.ts' }, 'a-t2'),
+    call($, 'Read', { file_path: '/repo/payments/c.ts' }, 'a-t1'),
+    call($, 'Read', { file_path: '/repo/payments/d.ts' }, 'a-t2'),
+  ])
+  expect(runs(w).find(r => r.agentId === 'a-t1')?.steps).toBe(2)
+  expect(runs(w).find(r => r.agentId === 'a-t2')?.steps).toBe(2)
+})

@@ -46,7 +46,7 @@ import {
   totalsSvg,
 } from './art'
 import { cacheView, classify, currentTask, isPlanLabel, contextLevel, costOf, countFindings, dueWarning, rowProgress, rowTier, fixRound, parseBranch, parseLedger, parsePlan, parseScriptCall, planPhase, rootOf, samePlan, windowOf, workspaceFrom } from './model'
-import { applyMainTaskCall, applyTaskCall, startsNewList, checklistAsPlan, checklistProgress, describeAction, headingOf, isListDone, isTaskTool, placeAgent } from './model'
+import { applyMainTaskCall, applyTaskCall, changesTaskList, namesPath, startsNewList, checklistAsPlan, checklistProgress, describeAction, headingOf, isListDone, isTaskTool, placeAgent } from './model'
 import type { ScriptCall, Usage } from './model'
 
 const PANE = 'agent-crew'
@@ -208,10 +208,14 @@ function resumedList(list: Run[], agentId: string, at: number): Run[] {
       stepDone: undefined,
       stepTotal: undefined,
       stepNote: undefined,
+      action: undefined,
+      steps: undefined,
+      ownList: undefined,
+      stepSource: undefined,
     }
     return [...list, fix].slice(-MAX_RUNS)
   }
-  return list.map(r => (r === run ? { ...run, status: 'running', endedAt: undefined } : r))
+  return list.map(r => (r === run ? { ...run, status: 'running', endedAt: undefined, action: undefined } : r))
 }
 
 // The engine's word on agents the mod still shows as running.
@@ -388,12 +392,21 @@ async function trackMainList($: EngineInterface, call: TaskCall): Promise<void> 
 
 /** One of an agent's calls as it starts: what it is doing, and one more step. */
 async function trackAgentCall($: EngineInterface, tool: string, input: unknown, agentId: string): Promise<void> {
-  const action = describeAction(tool, input, await $.session.cwd().catch(() => null))
-  if (!action && isTaskTool(tool)) return
+  const action = describeAction(tool, input, namesPath(input) ? await $.session.cwd().catch(() => null) : null)
   await update($, runsAtom, (runs: Run[]) => {
     const run = newestOf(runs, agentId)
     if (!run || run.status !== 'running') return runs
-    const next: Run = { ...run, ...(action ? { action } : {}), ...(isTaskTool(tool) ? {} : { steps: (run.steps ?? 0) + 1 }) }
+    const next: Run = { ...run, ...(action ? { action } : {}), steps: (run.steps ?? 0) + 1 }
+    return runs.map(r => (r === run ? next : r))
+  })
+}
+
+/** A call that was denied did not happen: its step goes back, and the action with it. */
+async function undoAgentCall($: EngineInterface, agentId: string): Promise<void> {
+  await update($, runsAtom, (runs: Run[]) => {
+    const run = newestOf(runs, agentId)
+    if (!run || run.status !== 'running') return runs
+    const next: Run = { ...run, action: undefined, steps: Math.max(0, (run.steps ?? 0) - 1) }
     return runs.map(r => (r === run ? next : r))
   })
 }
@@ -496,10 +509,12 @@ export const register: Register = on => {
     const tool = String((e as { tool?: unknown }).tool ?? '')
     const agentId = e.agentId
     // An agent's action shows as the call starts.
-    if (agentId && tool !== STEP_TOOL) void trackAgentCall($, tool, e, agentId).catch(() => undefined)
+    const tracked = agentId && tool !== STEP_TOOL && !isTaskTool(tool) ? trackAgentCall($, tool, e, agentId).catch(() => undefined) : null
     const done = await next(e)
     try {
-      if (tool !== STEP_TOOL && isTaskTool(tool)) {
+      const denied = (done as { deny?: unknown } | null)?.deny !== undefined
+      if (denied && agentId && tracked) void tracked.then(() => undoAgentCall($, agentId)).catch(() => undefined)
+      if (!denied && changesTaskList(tool)) {
         const call: TaskCall = { tool, input: e, result: (done as { result?: unknown } | null)?.result }
         // Claude's own list is written before the call returns, so an agent started next is placed by it.
         if (!agentId) await trackMainList($, call)
@@ -515,7 +530,13 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     const entered = await next(e)
     try {
-      if (!e.isMeta && !e.command && entered && !('drop' in entered && entered.drop)) beside(() => update($, promptAtom, () => e.text))
+      // The person's own: typed at the prompt, or through Remote Control.
+      const kind = (e.origin as { kind?: string } | undefined)?.kind
+      const isPerson = kind === undefined || kind === 'composer' || kind === 'bridge'
+      if (!e.isMeta && !e.command && isPerson && entered && 'text' in entered && typeof entered.text === 'string') {
+        const text = entered.text
+        void update($, promptAtom, () => text).catch(() => undefined)
+      }
     } catch {
       // Nothing to remember.
     }
@@ -580,7 +601,7 @@ export const register: Register = on => {
       // No superpowers plan: Claude's own list places the agent, and a finished list gives way.
       if ((await read($, planAtom)) === null) {
         const list: Checklist | null = await read($, checklistAtom)
-        if (list && isListDone(list.items)) await update($, checklistAtom, () => null)
+        if (list && isListDone(list.items)) await update($, checklistAtom, (c: Checklist | null) => (c && isListDone(c.items) ? null : c))
         else if (list) kind = { ...kind, task: placeAgent(list.items, e.description) }
       }
     } catch {
@@ -795,6 +816,22 @@ export const register: Register = on => {
               </Text>
             ) : item.kind === 'group' ? (
               <Button key={`group-${item.key}`} label={item.label} plain onPress={() => toggleGroup(item.key, item.open)} />
+            ) : item.kind === 'line' ? (
+              item.agentId ? (
+                <Button
+                  key={`view-${item.key}`}
+                  label={item.text}
+                  plain
+                  onPress={() => {
+                    const run = list.find(r => r.id === item.key)
+                    if (run) void viewAgent($, run, viewing)
+                  }}
+                />
+              ) : (
+                <Text key={`i${i}`} dimColor>
+                  {item.text}
+                </Text>
+              )
             ) : item.kind === 'finished' ? (
               finishedButton
             ) : item.kind === 'empty' ? (
@@ -994,13 +1031,33 @@ export const register: Register = on => {
         {finished.length > 0 && running.length > 0 && rule}
         {finished.length > 0 && finishedButton}
         {isOpen &&
-          finished.map(r => (
-            <Text key={r.id} wrap="truncate-end">
-              {'  '}
-              <Text color={r.status === 'failed' ? 'red' : 'green'}>{finishedLine(r, now).slice(0, 1)}</Text>
-              <Text dimColor>{finishedLine(r, now).slice(1)}</Text>
-            </Text>
-          ))}
+          finished.map(r => {
+            // The line is the agent's button, as a running agent's name is.
+            const line = [
+              <Text key="mark" color={r.status === 'failed' ? 'red' : 'green'}>
+                {`  ${finishedLine(r, now).slice(0, 1)}`}
+              </Text>,
+              <Text key="rest" dimColor>
+                {finishedLine(r, now).slice(1)}
+              </Text>,
+              ...(viewing === r.agentId && r.agentId
+                ? [
+                    <Text key="viewing" dimColor>
+                      {'  ◀ viewing'}
+                    </Text>,
+                  ]
+                : []),
+            ]
+            return r.agentId ? (
+              <Button key={`view-${r.id}`} plain onPress={() => void viewAgent($, r, viewing)}>
+                {line}
+              </Button>
+            ) : (
+              <Text key={r.id} wrap="truncate-end">
+                {line}
+              </Text>
+            )
+          })}
       </Box>
     )
   })

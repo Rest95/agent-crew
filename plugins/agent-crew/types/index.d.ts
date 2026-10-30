@@ -26,6 +26,8 @@ export type ChecklistItem = {
   /** The present-continuous form shown while it is in progress. */
   active?: string
   status: 'pending' | 'in_progress' | 'completed'
+  /** Rises each time an item goes in progress: the latest started has the highest. */
+  startedOrder?: number
 }
 
 /** Claude's task list in the main conversation, shown as the plan when no superpowers plan runs. */

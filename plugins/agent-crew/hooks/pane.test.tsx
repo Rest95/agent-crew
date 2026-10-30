@@ -283,3 +283,24 @@ test("a finished superpowers plan gives way to Claude's new task list", async ($
   expect(await ui.find({ type: 'Text', text: /Claude's task list/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('terminal: a finished agent still opens its transcript', async ($, on) => {
+  const w = world(on)
+  await spawn($, 't1', 'One')
+  await finish($, 'a-t1')
+  const ui = await $.ui.mount(pane('terminal'))
+  await ui.press({ key: 'view-a-t1' })
+  expect(w.views).toEqual([{ agentId: 'a-t1' }])
+  await ui.unmount()
+})
+
+test('desktop: a finished agent is one line, and opens its transcript', async ($, on) => {
+  const w = world(on)
+  await spawn($, 't1', 'One')
+  await finish($, 'a-t1')
+  const ui = await $.ui.mount(pane('desktop'))
+  expect((await ui.find({ key: 'view-a-t1' }))?.props.label).toMatch(/^✓ One {2}general-purpose/)
+  await ui.press({ key: 'view-a-t1' })
+  expect(w.views).toEqual([{ agentId: 'a-t1' }])
+  await ui.unmount()
+})

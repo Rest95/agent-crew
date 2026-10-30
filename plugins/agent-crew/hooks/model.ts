@@ -328,22 +328,51 @@ const STATUSES: readonly ChecklistItem['status'][] = ['pending', 'in_progress', 
 const objectOf = (x: unknown): Record<string, unknown> | null => (x !== null && typeof x === 'object' ? (x as Record<string, unknown>) : null)
 const textOf = (x: unknown): string => (typeof x === 'string' ? x : typeof x === 'number' ? String(x) : '')
 const firstLine = (s: string): string => s.split('\n').map(l => l.trim()).find(Boolean) ?? ''
-const cut = (s: string, max: number): string => (s.length > max ? s.slice(0, max - 1) + '…' : s)
+// Terminal columns: East Asian wide characters and emoji take two.
+const columnsOf = (ch: string): number => {
+  const c = ch.codePointAt(0) ?? 0
+  return (c >= 0x1100 && c <= 0x115f) || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7a3) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0xfe30 && c <= 0xfe6f) || (c >= 0xff00 && c <= 0xff60) || (c >= 0x1f300 && c <= 0x1faff) || (c >= 0x20000 && c <= 0x3fffd) ? 2 : 1
+}
+const cut = (s: string, max: number): string => {
+  const chars = [...s]
+  if (chars.reduce((n, ch) => n + columnsOf(ch), 0) <= max) return s
+  let used = 0
+  let out = ''
+  for (const ch of chars) {
+    if (used + columnsOf(ch) > max - 1) break
+    used += columnsOf(ch)
+    out += ch
+  }
+  return out + '…'
+}
 
 /** True for the task-list tools: bookkeeping, not work. */
 export const isTaskTool = (tool: string): boolean => TASK_TOOLS.has(tool)
 
+/** True for the task-list tools that change a list (not TaskList, TaskGet). */
+export const changesTaskList = (tool: string): boolean => isTaskTool(tool) && tool !== 'TaskList' && tool !== 'TaskGet'
+
+/** True when a call names a file, so its action needs the session's folder. */
+export const namesPath = (input: unknown): boolean => {
+  const i = objectOf(input)
+  return Boolean(i && (i.file_path ?? i.notebook_path ?? i.path))
+}
+
 /** A path as the person reads it: inside the session's folder relative to it, cut from the left to fit. */
 function pathIn(path: string, cwd: string | null, room: number): string {
   const rel = cwd && path.startsWith(cwd.replace(/\/$/, '') + '/') ? path.slice(cwd.replace(/\/$/, '').length + 1) : path
-  return rel.length > room ? '…' + rel.slice(rel.length - (room - 1)) : rel
+  const chars = [...rel]
+  return chars.length > room ? '…' + chars.slice(chars.length - (room - 1)).join('') : rel
 }
 
 /** What a tool call is doing, in a few words; null for bookkeeping (task lists, the step tool). */
 export function describeAction(tool: string, input: unknown, cwd: string | null): string | null {
   if (isTaskTool(tool) || tool === 'mcp__agent-crew__step') return null
   const i = objectOf(input) ?? {}
-  const withPath = (verb: string) => `${verb} ${pathIn(textOf(i.file_path ?? i.notebook_path ?? i.path), cwd, ACTION_MAX - verb.length - 1)}`
+  const withPath = (verb: string) => {
+    const path = firstLine(textOf(i.file_path ?? i.notebook_path ?? i.path))
+    return path ? `${verb} ${pathIn(path, cwd, ACTION_MAX - verb.length - 1)}` : `${verb} a file`
+  }
   switch (tool) {
     case 'Edit':
     case 'Write':
@@ -355,9 +384,9 @@ export function describeAction(tool: string, input: unknown, cwd: string | null)
     case 'Grep':
       return cut(`⌕ Searching "${firstLine(textOf(i.pattern))}"`, ACTION_MAX)
     case 'Glob':
-      return cut(`⌕ Finding ${firstLine(textOf(i.pattern))}`, ACTION_MAX)
+      return cut(`⌕ Finding ${firstLine(textOf(i.pattern)) || 'files'}`, ACTION_MAX)
     case 'Bash':
-      return cut(`▶ Running ${firstLine(textOf(i.description)) || firstLine(textOf(i.command))}`, ACTION_MAX)
+      return cut(`▶ Running ${firstLine(textOf(i.description)) || firstLine(textOf(i.command)) || 'a command'}`, ACTION_MAX)
     case 'WebFetch': {
       const url = textOf(i.url)
       let host = url
@@ -366,12 +395,12 @@ export function describeAction(tool: string, input: unknown, cwd: string | null)
       } catch {
         // Not a URL: show it as given.
       }
-      return cut(`⇣ Fetching ${host}`, ACTION_MAX)
+      return cut(`⇣ Fetching ${host || 'a page'}`, ACTION_MAX)
     }
     case 'WebSearch':
       return '⇣ Searching the web'
     case 'Agent':
-      return cut(`↳ Starting ${firstLine(textOf(i.description))}`, ACTION_MAX)
+      return cut(`↳ Starting ${firstLine(textOf(i.description)) || 'an agent'}`, ACTION_MAX)
     default:
       return cut(`· ${tool.startsWith('mcp__') ? tool.slice(tool.lastIndexOf('__') + 2) : tool}`, ACTION_MAX)
   }
@@ -379,6 +408,7 @@ export function describeAction(tool: string, input: unknown, cwd: string | null)
 
 const statusOf = (x: unknown): ChecklistItem['status'] | null => (STATUSES.includes(x as ChecklistItem['status']) ? (x as ChecklistItem['status']) : null)
 const nextNumber = (items: readonly ChecklistItem[]): number => items.reduce((n, i) => Math.max(n, i.n), 0) + 1
+const nextStart = (items: readonly ChecklistItem[]): number => items.reduce((n, i) => Math.max(n, i.startedOrder ?? 0), 0) + 1
 
 /** A task list after one task-list call; a call it cannot read returns the same array. */
 export function applyTaskCall(items: readonly ChecklistItem[], call: TaskCall): ChecklistItem[] {
@@ -398,16 +428,19 @@ export function applyTaskCall(items: readonly ChecklistItem[], call: TaskCall): 
   if (call.tool === 'TaskUpdate') {
     const key = textOf(input.taskId)
     const found = items.find(i => i.key === key)
-    if (!found) return same
+    if (!found || objectOf(call.result)?.success === false) return same
     if (input.status === 'deleted') return items.filter(i => i !== found)
     const text = firstLine(textOf(input.subject)) || found.text
     const active = textOf(input.activeForm) || found.active
     const status = statusOf(input.status) ?? found.status
-    return items.map(i => (i === found ? { ...found, text, ...(active ? { active } : {}), status } : i))
+    const started = status === 'in_progress' && found.status !== 'in_progress' ? { startedOrder: nextStart(items) } : {}
+    return items.map(i => (i === found ? { ...found, text, ...(active ? { active } : {}), status, ...started } : i))
   }
   if (call.tool === 'TodoWrite') {
     if (!Array.isArray(input.todos)) return same
+    if (input.todos.length === 0) return items.length ? [] : same
     let n = nextNumber(items)
+    let order = nextStart(items)
     const out: ChecklistItem[] = []
     for (const raw of input.todos) {
       const todo = objectOf(raw)
@@ -415,7 +448,9 @@ export function applyTaskCall(items: readonly ChecklistItem[], call: TaskCall): 
       if (!todo || !text || out.some(o => o.key === text)) continue
       const before = items.find(i => i.key === text)
       const active = textOf(todo.activeForm)
-      out.push({ key: text, n: before?.n ?? n++, text, ...(active ? { active } : {}), status: statusOf(todo.status) ?? 'pending' })
+      const status = statusOf(todo.status) ?? 'pending'
+      const startedOrder = status !== 'in_progress' ? before?.startedOrder : before?.status === 'in_progress' ? before.startedOrder : order++
+      out.push({ key: text, n: before?.n ?? n++, text, ...(active ? { active } : {}), status, ...(startedOrder ? { startedOrder } : {}) })
     }
     return out.length ? out : same
   }
@@ -458,7 +493,13 @@ export function placeAgent(items: readonly ChecklistItem[], description: string)
   if (doing.length === 0) return null
   const words = wordsOf(description)
   const score = (i: ChecklistItem) => [...wordsOf(i.text)].filter(w => words.has(w)).length
-  return doing.reduce((best, i) => (score(i) > score(best) || (score(i) === score(best) && i.n > best.n) ? i : best)).n
+  const rank = (i: ChecklistItem): [number, number, number] => [score(i), i.startedOrder ?? 0, i.n]
+  const beats = (a: ChecklistItem, b: ChecklistItem): boolean => {
+    const [x, y] = [rank(a), rank(b)]
+    const at = x.findIndex((v, k) => v !== y[k])
+    return at >= 0 && (x[at] ?? 0) > (y[at] ?? 0)
+  }
+  return doing.reduce((best, i) => (beats(i, best) ? i : best)).n
 }
 
 /** Claude's list in the shape the plan view draws. */

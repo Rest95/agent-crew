@@ -9,7 +9,11 @@ import {
   BAR_HEIGHT,
   CACHE_COLOR,
   DONE_COLOR,
+  ACTION_COLOR,
   GLYPH,
+  finishedLine,
+  noListHeading,
+  noListPhase,
   ROLE_STYLE,
   TASK_ROW_HEIGHT,
   TOTALS_HEIGHT,
@@ -707,7 +711,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
-    const plan: Plan | null = await read($, planAtom)
+    const plan = await shownPlan($)
     const list: Run[] = await read($, runsAtom)
     const isOpen: boolean = await read($, finishedOpenAtom)
     const openGroups: Record<string, boolean> = await read($, openGroupsAtom)
@@ -789,66 +793,6 @@ export const register: Register = on => {
     }
 
     // Terminal: the same content in text rows.
-    const cells = 20
-    const row = (r: Run) => {
-      const color = colorOf(r)
-      const progress = progressOf(r)
-      const steps = stepsText(r)
-      const mark = r.status === 'failed' ? 'red' : r.status === 'done' ? 'green' : color
-      return (
-        <Box key={r.id} flexDirection="column" marginBottom={1}>
-          {r.agentId ? (
-            // The title is the row's button: it puts the agent's transcript in the main view.
-            <Button key={`view-${r.id}`} plain onPress={() => void viewAgent($, r, viewing)}>
-              {[
-                <Text key="mark" color={color}>
-                  ▣{' '}
-                </Text>,
-                <Text key="title" bold>
-                  {runTitle(r, plan)}
-                </Text>,
-                <Text key="glyph" color={mark}>
-                  {` ${GLYPH[r.status]}`}
-                </Text>,
-                ...(viewing === r.agentId
-                  ? [
-                      <Text key="viewing" dimColor>
-                        {'  ◀ viewing'}
-                      </Text>,
-                    ]
-                  : []),
-              ]}
-            </Button>
-          ) : (
-            <Box flexDirection="row" gap={1}>
-              <Text color={color}>▣</Text>
-              <Text bold wrap="truncate-end">
-                {runTitle(r, plan)}
-              </Text>
-              <Text color={mark}>{GLYPH[r.status]}</Text>
-            </Box>
-          )}
-          <Text wrap="truncate-end">
-            {'  '}
-            <Text color={color}>{runRole(r)}</Text>
-            <Text dimColor>
-              {' · '}
-              {runModel(r)}
-              {r.findings && r.status !== 'running' ? ` · ${r.findings} findings` : ''}
-            </Text>
-          </Text>
-          <Text wrap="truncate-end">
-            {'  '}
-            {progress === null ? <Text dimColor>{bar(ctxPercent(r), cells)}</Text> : <Text color={color}>{bar(progress * 100, cells)}</Text>}
-            <Text dimColor>
-              {' '}
-              {steps ? `${steps} · ` : ''}ctx {ctxPercent(r)}% · {fmtTokens(r.contextTokens)} ≈{fmtCost(r.costUsd)} {fmtTime(elapsed(r, now))}
-            </Text>
-          </Text>
-        </Box>
-      )
-    }
-
     // One agent under its task: its name, then its role, model, status, time and cost, then (while it runs) its bar.
     const agentLine = (r: Run) => {
       const color = colorOf(r)
@@ -880,6 +824,12 @@ export const register: Register = on => {
           ) : (
             <Text wrap="truncate-end">{name}</Text>
           )}
+          {r.status === 'running' && r.action && (
+            <Text wrap="truncate-end">
+              {'    '}
+              <Text color={ACTION_COLOR}>{r.action}</Text>
+            </Text>
+          )}
           <Text wrap="truncate-end">
             {'    '}
             <Text color={color}>{runRole(r)}</Text>
@@ -902,8 +852,8 @@ export const register: Register = on => {
       )
     }
 
+    const rule = <Text dimColor>{'─'.repeat(Math.max(10, (e.props.bodyColumns || 40) - 2))}</Text>
     if (plan && phase) {
-      const rule = <Text dimColor>{'─'.repeat(Math.max(10, (e.props.bodyColumns || 40) - 2))}</Text>
       const groups = planGroups(plan, list)
       return (
         <Box flexDirection="column">
@@ -997,66 +947,39 @@ export const register: Register = on => {
       )
     }
 
+    // No list: how many agents and how far along, the ones at work, then the finished ones folded away.
+    const noList = noListPhase(list)
+    const noListPercent = noList.total ? Math.round((noList.done / noList.total) * 100) : 0
     return (
       <Box flexDirection="column">
         {backButton}
-        {plan && phase && (
-          <Box key="head" flexDirection="column" marginBottom={1}>
+        {list.length === 0 ? (
+          <Text dimColor>No subagents yet.</Text>
+        ) : (
+          <Box key="head" flexDirection="column">
             <Text bold color={ACCENT} wrap="truncate-end">
-              {plan.title}
-            </Text>
-            <Text dimColor wrap="truncate-end">
-              {plan.path}
+              {noListHeading(list)}
             </Text>
             <Text wrap="truncate-end">
-              <Text color={phase.isFinished ? DONE_COLOR : ACCENT}>{bar(percent, 24)}</Text> <Text bold>{phase.label}</Text>{' '}
-              <Text dimColor>{`${percent}%`}</Text>
+              <Text color={noList.isFinished ? DONE_COLOR : ACCENT}>{bar(noListPercent, 24)}</Text> <Text bold>{noList.label}</Text>{' '}
+              <Text dimColor>{`${noListPercent}%`}</Text>
             </Text>
+            <Text dimColor>{`≈${fmtCost(cost)} · ${fmtTokens(tokens)} tokens · ${fmtTime(span)}`}</Text>
           </Box>
         )}
-        <Text dimColor>{`≈${fmtCost(cost)} · ${fmtTokens(tokens)} tokens · ${fmtTime(span)}`}</Text>
-        <Box flexDirection="column" marginTop={1}>
-          {list.length === 0 && !inlineTask && <Text dimColor>No subagents yet.</Text>}
-          {(running.length > 0 || inlineTask) && <Text dimColor>{`${plan ? 'Now' : 'Running'} · ${running.length || 1}`}</Text>}
-          {inlineTask && (
-            <Box key="inline" flexDirection="column" marginBottom={1}>
-              <Text bold wrap="truncate-end">
-                <Text color={ROLE_STYLE.implement.color}>▣</Text> {`Main session · Task ${inlineTask.n} · ${inlineTask.title}`}
-              </Text>
-              <Text dimColor>{'  working inline'}</Text>
-            </Box>
-          )}
-          {running.map(row)}
-          {plan && (
-            <Box key="plan" flexDirection="column" marginBottom={1}>
-              <Text dimColor>{`Plan · ${plan.tasks.length} tasks`}</Text>
-              {plan.tasks.map(t => {
-                const state = taskState(t.n)
-                return (
-                  <Text key={`task-${t.n}`} wrap="truncate-end">
-                    {state === 'done' ? <Text color="green">{GLYPH.done}</Text> : state === 'current' ? <Text color={ROLE_STYLE.implement.color}>{GLYPH.running}</Text> : <Text color={ACCENT}>{GLYPH.waiting}</Text>}{' '}
-                    {state === 'waiting' ? (
-                      <Text>
-                        <Text color={ACCENT}>{`${t.n}.`}</Text> {t.title}
-                      </Text>
-                    ) : (
-                      <Text bold={state === 'current'}>{`${t.n}. ${t.title}`}</Text>
-                    )}{' '}
-                    {list
-                      .filter(r => r.task === t.n)
-                      .map(r => (
-                        <Text key={r.id} color={colorOf(r)}>
-                          ▣
-                        </Text>
-                      ))}
-                  </Text>
-                )
-              })}
-            </Box>
-          )}
-          {finished.length > 0 && finishedButton}
-          {isOpen && finished.map(row)}
-        </Box>
+        {list.length > 0 && rule}
+        {running.length > 0 && <Text dimColor>{`Working · ${running.length}`}</Text>}
+        {running.map(agentLine)}
+        {finished.length > 0 && rule}
+        {finished.length > 0 && finishedButton}
+        {isOpen &&
+          finished.map(r => (
+            <Text key={r.id} wrap="truncate-end">
+              {'  '}
+              <Text color={r.status === 'failed' ? 'red' : 'green'}>{finishedLine(r, now).slice(0, 1)}</Text>
+              <Text dimColor>{finishedLine(r, now).slice(1)}</Text>
+            </Text>
+          ))}
       </Box>
     )
   })

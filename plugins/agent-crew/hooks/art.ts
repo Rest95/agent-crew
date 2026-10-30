@@ -292,7 +292,7 @@ export const AGENT_ROW_HEIGHT = 66
 /** One agent: crab, title, role in its colour, model, steps, stats and a progress line. */
 /** A running agent with an action line is one line taller. */
 const ACTION_LINE = 14
-const ACTION_COLOR = '#e8c66a'
+export const ACTION_COLOR = '#e8c66a'
 const showsAction = (run: Run): boolean => run.status === 'running' && Boolean(run.action)
 export const agentRowHeight = (run: Run): number => AGENT_ROW_HEIGHT + (showsAction(run) ? ACTION_LINE : 0)
 

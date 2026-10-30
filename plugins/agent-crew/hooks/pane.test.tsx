@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
 import { LEDGER, PLAN_PATH, bash, finish, spawn, start, world } from './fixtures'
+import { call, submit } from './fixtures'
 
 const pane = (surface: 'terminal' | 'desktop', bodyColumns = 60, view: { agentId?: string } = {}) =>
   ({
@@ -207,5 +208,58 @@ test('terminal: each agent under a task shows its own name, then its role and mo
   expect(await ui.find({ type: 'Text', text: /Implement Task 2: Background jobs/ })).toBeDefined()
   const details = await ui.find({ type: 'Text', text: /^\s*implementing · / })
   expect(details?.text).toMatch(/^\s*implementing · Sonnet 5\.5(?: · \S+)? · ● /)
+  await ui.unmount()
+})
+
+// ---------------------------------------------------------------------------
+// Everyday mode
+
+test("terminal: Claude's task list shows as the plan", async ($, on) => {
+  world(on)
+  await submit($, 'Add CSV export to the reports page')
+  await call($, 'TaskCreate', { subject: 'Add the CSV writer', description: 'd' })
+  await call($, 'TaskCreate', { subject: 'Wire the export button', description: 'd' })
+  await call($, 'TaskUpdate', { taskId: '1', status: 'in_progress' })
+  await spawn($, 't1', 'Write the CSV writer')
+  const ui = await $.ui.mount(pane('terminal'))
+  for (const text of [/Add CSV export/, /Claude's task list/, /Tasks 0\/2/, /Write the CSV writer/]) expect(await ui.find({ type: 'Text', text })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Other agents/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('terminal: a running agent shows what it is doing', async ($, on) => {
+  world(on)
+  await spawn($, 't1', 'Look around')
+  await call($, 'Edit', { file_path: '/repo/payments/lib/a.ts' }, 'a-t1')
+  const ui = await $.ui.mount(pane('terminal'))
+  expect(await ui.find({ type: 'Text', text: /✎ Editing lib\/a\.ts/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('terminal: a superpowers agent shows its action too', async ($, on) => {
+  await midPlan($, on)
+  await call($, 'Edit', { file_path: '/repo/payments/jobs.ts' }, 'a-t2')
+  const ui = await $.ui.mount(pane('terminal'))
+  expect(await ui.find({ type: 'Text', text: /✎ Editing jobs\.ts/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('terminal: no task list', async ($, on) => {
+  world(on)
+  await spawn($, 't1', 'One')
+  await spawn($, 't2', 'Two')
+  await finish($, 'a-t1')
+  const ui = await $.ui.mount(pane('terminal'))
+  for (const text of [/2 agents · 1 working · 1 done/, /1\/2 done/, /Working · 1/]) expect(await ui.find({ type: 'Text', text })).toBeDefined()
+  expect((await ui.find({ key: 'finished' }))?.props.label).toMatch(/Finished · 1/)
+  await ui.unmount()
+})
+
+test("a superpowers plan wins over Claude's list", async ($, on) => {
+  await midPlan($, on)
+  await call($, 'TaskCreate', { subject: 'Something', description: 'd' })
+  const ui = await $.ui.mount(pane('terminal'))
+  expect(await ui.find({ type: 'Text', text: /Payments/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Claude's task list/ })).toBeUndefined()
   await ui.unmount()
 })

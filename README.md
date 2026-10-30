@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>See what every subagent is doing, how far along it is and what it costs.</strong><br>
-  A live side panel and status row for <a href="https://code.claude.com/docs">Claude Code</a>. No setup, no new commands to learn.
+  A live side panel and status row for <a href="https://code.claude.com/docs">Claude Code</a>, in the terminal and the desktop app. No setup, no new commands to learn.
 </p>
 
 <p align="center">
@@ -45,6 +45,8 @@ In Claude Code:
 
 Restart Claude Code to load it. The panel opens by itself the next time a subagent starts. Updates need a restart too.
 
+It runs in the terminal and the desktop app, and has been tested on Claude Code 2.1.312 to 2.1.314. Mods are new, so older versions may not load it.
+
 ## Features
 
 - **What each agent is doing, live.** A line under its name from its latest tool call: `✎ Editing lib/csv.ts`, `⌕ Reading src/auth.ts`, `▶ Running npm test`.
@@ -52,7 +54,7 @@ Restart Claude Code to load it. The panel opens by itself the next time a subage
 - **What it costs.** A running estimate per agent, plus totals for the session.
 - **Your work as a plan.** When Claude keeps a task list, the panel shows your prompt, a `Tasks 1/4` bar and each agent under its task.
 - **One row above the prompt.** Progress, model and effort, git branch, context fill and a prompt-cache countdown with a warning before it expires.
-- **Click to open.** Click an agent to see its transcript in the main view.
+- **Click to open.** Click an agent to see its transcript in the main view (`View` for a running agent on the desktop).
 - **Fits your theme.** Terminal colours follow your Claude Code theme, light or dark.
 - **Works in the background.** It never slows a tool call, and it makes no network calls: everything stays on your machine.
 
@@ -84,7 +86,7 @@ The frame is your theme's text colour at rest, amber with 20 minutes of cache le
 
 <img src="docs/screenshots/everyday-desktop.png" alt="The task-list view in the desktop app, with a pixel crab and a View link for each agent" width="400">
 
-The desktop panel carries the same information, drawn with the crew of pixel crabs.
+The desktop panel carries the same information, drawn with the crew of pixel crabs. The row above the prompt is there too, with small icons for the context and cache.
 
 <sub>The images in this section are drawn by the mod's own code from sample sessions (`bun scripts/preview.ts`).</sub>
 
@@ -97,7 +99,7 @@ The desktop panel carries the same information, drawn with the crew of pixel cra
 
 ## Options
 
-Set these in `/config`, or under `pluginConfigs` in `~/.claude/settings.json`.
+Set these in `/config`, or under `pluginConfigs` in `~/.claude/settings.json`. Both are on until you change them, so you can skip any prompt to set them when installing.
 
 | Option | Default | What it does |
 | --- | --- | --- |
@@ -155,7 +157,7 @@ When a plan is running it takes priority over Claude's task list. Once it's fini
 <details>
 <summary>The panel didn't open</summary>
 
-Claude Code opens the panel by itself only when the terminal is at least 144 columns wide. Use `/crew` to open it at any width. Check that `open_panel` is on, too.
+In the terminal, Claude Code opens the panel by itself only when the window is at least 144 columns wide. Use `/crew` to open it at any width. Check that `open_panel` is on, too.
 
 </details>
 
@@ -188,9 +190,16 @@ Claude Code can only show agents still in its own list. Once an agent has left t
 </details>
 
 <details>
+<summary>The colours don't match the screenshots</summary>
+
+Terminal colours follow your Claude Code theme, so the title and bars can be lavender, blue or something else. The drawn images in this README use one fixed palette.
+
+</details>
+
+<details>
 <summary>The cost doesn't match my bill</summary>
 
-Costs are estimates from token counts at list prices. A model missing from the mod's price table uses a default rate.
+Costs are estimates from token counts at list prices. A model missing from the mod's price table uses a default rate. Starting an agent loads its context, so even one that reads nothing shows a cost.
 
 </details>
 

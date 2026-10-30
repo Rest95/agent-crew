@@ -3,6 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
 import { LEDGER, PLAN_PATH, START, bash, finish, main, mainEnd, mainTurn, request, spawn, start, world } from './fixtures'
+import { call, submit } from './fixtures'
 
 const HOUR = 3_600_000
 
@@ -345,5 +346,35 @@ test('a long plan name at a docked width: shortened, nothing wraps, the working 
   expect(await ui.find({ type: 'Text', text: /working/ })).toBeUndefined()
   for (const t of await ui.findAll({ type: 'Text' })) if (t.text.trim()) expect(t.props.wrap).toBe('truncate-end')
   void w
+  await ui.unmount()
+})
+
+// ---------------------------------------------------------------------------
+// Everyday mode
+
+test("the row shows Claude's task list", async ($, on) => {
+  world(on, {})
+  await start($)
+  await submit($, 'Add CSV export to the reports page')
+  await call($, 'TaskCreate', { subject: 'Add the CSV writer', description: 'd' })
+  await call($, 'TaskCreate', { subject: 'Wire the export button', description: 'd' })
+  await call($, 'TaskUpdate', { taskId: '1', status: 'in_progress' })
+  await spawn($, 't1', 'Write the CSV writer')
+  const ui = await $.ui.mount(row('terminal'))
+  expect(await ui.find({ type: 'Text', text: /^Add CSV export/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Tasks 0\/2/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test("the row's agent count has a bar", async ($, on) => {
+  world(on, {})
+  await start($)
+  await spawn($, 'x1', 'Find the payment rules', 'Explore')
+  await spawn($, 'x2', 'Check the queue', 'Explore')
+  await finish($, 'a-x1')
+  const ui = await $.ui.mount(row('terminal'))
+  expect(await ui.find({ type: 'Text', text: /1 working · 1 done/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^[█░]{16}$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^50%$/ })).toBeDefined()
   await ui.unmount()
 })

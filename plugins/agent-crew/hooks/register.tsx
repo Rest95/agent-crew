@@ -996,7 +996,7 @@ export const register: Register = on => {
 
     const ui = $.ui.resolve(e)
     const { Box, Text } = ui
-    const plan: Plan | null = await read($, planAtom)
+    const plan = await shownPlan($)
     const list: Run[] = await read($, runsAtom)
     const now = await $.clock.now()
     const progress = rowProgress(plan, list, main.planDoneAt)
@@ -1008,6 +1008,8 @@ export const register: Register = on => {
     const percent = phase ? Math.round((phase.isFinished ? 1 : phase.total ? phase.done / phase.total : 0) * 100) : 0
     const planColor = phase?.isFinished ? DONE_COLOR : ACCENT
     const working = progress.kind === 'none' ? 0 : progress.working
+    // Agents without a plan: finished out of all of them.
+    const agentsPercent = progress.kind === 'agents' && progress.working + progress.done > 0 ? Math.round((progress.done / (progress.working + progress.done)) * 100) : 0
     const Svg = e.surface !== 'terminal' && 'Svg' in ui ? ui.Svg : null
     const icon = 22
     // About 8 CSS px per column on the desktop; the bar takes about a third of the row.
@@ -1020,6 +1022,8 @@ export const register: Register = on => {
           <Text bold wrap="truncate-end">
             {tier < 3 ? `${progress.working} working · ${progress.done} done` : `${progress.working} working`}
           </Text>
+          {tier < 3 && <Text wrap="truncate-end" color={ACCENT}>{bar(agentsPercent, 16)}</Text>}
+          {tier < 3 && <Text wrap="truncate-end" dimColor>{`${agentsPercent}%`}</Text>}
         </Box>
       ) : plan && phase ? (
         <Box key="progress" flexDirection="row" columnGap={1} flexShrink={1} alignItems="center">

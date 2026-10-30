@@ -272,3 +272,14 @@ test('terminal: no task list and nothing working draws one line, not two', async
   expect((await ui.findAll({ type: 'Text', text: /^─+$/ })).length).toBe(1)
   await ui.unmount()
 })
+
+test("a finished superpowers plan gives way to Claude's new task list", async ($, on) => {
+  const w = world(on)
+  w.files.set(LEDGER, `# SDD ledger — plan: ${PLAN_PATH}\nTask 1: complete\nTask 2: complete\nTask 3: complete\n`)
+  await bash($, `scripts/sdd-workspace ${PLAN_PATH}`)
+  await submit($, 'Follow-up work')
+  await call($, 'TaskCreate', { subject: 'Next thing', description: 'd' })
+  const ui = await $.ui.mount(pane('terminal'))
+  expect(await ui.find({ type: 'Text', text: /Claude's task list/ })).toBeDefined()
+  await ui.unmount()
+})

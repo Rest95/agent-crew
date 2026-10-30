@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Checklist, Main, Plan, Run } from '../types'
+import type { Checklist, Main, Plan, Run, TaskCall } from '../types'
 import {
   ACCENT,
   AGENT_ROW_HEIGHT,
@@ -46,7 +46,7 @@ import {
   totalsSvg,
 } from './art'
 import { cacheView, classify, currentTask, isPlanLabel, contextLevel, costOf, countFindings, dueWarning, rowProgress, rowTier, fixRound, parseBranch, parseLedger, parsePlan, parseScriptCall, planPhase, rootOf, samePlan, windowOf, workspaceFrom } from './model'
-import { applyMainTaskCall, applyTaskCall, checklistAsPlan, checklistProgress, describeAction, headingOf, isListDone, isTaskTool, placeAgent } from './model'
+import { applyMainTaskCall, applyTaskCall, startsNewList, checklistAsPlan, checklistProgress, describeAction, headingOf, isListDone, isTaskTool, placeAgent } from './model'
 import type { ScriptCall, Usage } from './model'
 
 const PANE = 'agent-crew'
@@ -82,10 +82,15 @@ const promptAtom = atom({ plugin: 'agent-crew', key: 'prompt' } as const, '')
 /** What the panel and the row draw as the plan: superpowers' plan, else Claude's own task list. */
 const shownPlan = async ($: EngineInterface): Promise<Plan | null> => {
   const plan: Plan | null = await read($, planAtom)
-  if (plan) return plan
   const list: Checklist | null = await read($, checklistAtom)
+  // A finished superpowers plan gives way to a task list still at work.
+  if (plan && list && !isListDone(list.items) && planPhase(plan, await read($, runsAtom)).isFinished) return checklistAsPlan(list)
+  if (plan) return plan
   return list ? checklistAsPlan(list) : null
 }
+
+/** Everyday agents lose their task numbers when the list they were placed in is gone. */
+const unplaceEveryday = (runs: Run[]): Run[] => (runs.some(r => r.role === 'other' && r.task !== null) ? runs.map(r => (r.role === 'other' && r.task !== null ? { ...r, task: null } : r)) : runs)
 
 const CACHE_TTL_MS = 60 * 60 * 1000
 const RECONCILE_EVERY_TICKS = 5
@@ -345,7 +350,7 @@ async function onScript($: EngineInterface, call: ScriptCall, stdout: string): P
     plan = { path: call.plan, ...parsePlan(call.plan, text), workspace, complete: [], current: null, inline: false }
     await setMain($, { planDoneAt: null })
     // A new plan starts with its own crew; agents still running stay.
-    await update($, runsAtom, (list: Run[]) => list.filter(r => r.status === 'running'))
+    await update($, runsAtom, (list: Run[]) => unplaceEveryday(list.filter(r => r.status === 'running')))
   }
   if (!plan) return
   const next: Plan = {
@@ -367,33 +372,44 @@ const stdoutOf = (done: unknown): string => {
   return typeof stdout === 'string' ? stdout : ''
 }
 
-/** Everyday tracking: Claude's task list from the main conversation; an agent's action, steps and own list from its loop. */
-async function onToolCall($: EngineInterface, tool: string, input: unknown, result: unknown, agentId: string | undefined): Promise<void> {
-  const call = { tool, input, result }
-  if (!agentId) {
-    if (!isTaskTool(tool)) return
-    const heading = headingOf(await read($, promptAtom))
-    let list: Checklist | null = null
-    await update($, checklistAtom, (current: Checklist | null) => (list = applyMainTaskCall(current, call, heading)))
-    // A list at work starts the row's Done afresh (superpowers keeps its own).
-    if (list && !isListDone((list as Checklist).items) && (await read($, planAtom)) === null) await setMain($, { planDoneAt: null })
-    return
-  }
+/** Claude's task list after one of its calls in the main conversation. */
+async function trackMainList($: EngineInterface, call: TaskCall): Promise<void> {
+  const heading = headingOf(await read($, promptAtom))
+  let list: Checklist | null = null
+  let isNew = false
+  await update($, checklistAtom, (current: Checklist | null) => {
+    isNew = startsNewList(current, call)
+    return (list = applyMainTaskCall(current, call, heading))
+  })
+  if (list && isNew) await update($, runsAtom, unplaceEveryday)
+  // A list at work starts the row's Done afresh (superpowers keeps its own).
+  if (list && !isListDone((list as Checklist).items) && (await read($, planAtom)) === null) await setMain($, { planDoneAt: null })
+}
+
+/** One of an agent's calls as it starts: what it is doing, and one more step. */
+async function trackAgentCall($: EngineInterface, tool: string, input: unknown, agentId: string): Promise<void> {
   const action = describeAction(tool, input, await $.session.cwd().catch(() => null))
+  if (!action && isTaskTool(tool)) return
   await update($, runsAtom, (runs: Run[]) => {
     const run = newestOf(runs, agentId)
     if (!run || run.status !== 'running') return runs
-    let next: Run = { ...run, ...(action ? { action } : {}), ...(isTaskTool(tool) ? {} : { steps: (run.steps ?? 0) + 1 }) }
-    if (isTaskTool(tool)) {
-      const base = run.ownList ?? []
-      const own = applyTaskCall(base, call)
-      if (own !== base) {
-        next = { ...next, ownList: own }
-        if (run.stepSource !== 'tool') {
-          const p = checklistProgress(own)
-          next = { ...next, stepDone: p.done, stepTotal: p.total, stepNote: p.note, stepSource: 'list' }
-        }
-      }
+    const next: Run = { ...run, ...(action ? { action } : {}), ...(isTaskTool(tool) ? {} : { steps: (run.steps ?? 0) + 1 }) }
+    return runs.map(r => (r === run ? next : r))
+  })
+}
+
+/** An agent's own task list after one of its calls: its step counter, unless the step tool reports. */
+async function trackAgentList($: EngineInterface, call: TaskCall, agentId: string): Promise<void> {
+  await update($, runsAtom, (runs: Run[]) => {
+    const run = newestOf(runs, agentId)
+    if (!run || run.status !== 'running') return runs
+    const base = run.ownList ?? []
+    const own = applyTaskCall(base, call)
+    if (own === base) return runs
+    let next: Run = { ...run, ownList: own }
+    if (run.stepSource !== 'tool') {
+      const p = checklistProgress(own)
+      next = { ...next, stepDone: p.done, stepTotal: p.total, stepNote: p.note, stepSource: 'list' }
     }
     return runs.map(r => (r === run ? next : r))
   })
@@ -475,14 +491,19 @@ export const register: Register = on => {
   })
 
   // Every tool call: what an agent is doing, and task lists. Beside the call, never in its way.
+  // Not through the shared queue: these writes are small and one stuck job there must not stop them.
   on('tool.call', async ($, e, next) => {
+    const tool = String((e as { tool?: unknown }).tool ?? '')
+    const agentId = e.agentId
+    // An agent's action shows as the call starts.
+    if (agentId && tool !== STEP_TOOL) void trackAgentCall($, tool, e, agentId).catch(() => undefined)
     const done = await next(e)
     try {
-      const tool = String((e as { tool?: unknown }).tool ?? '')
-      if (tool !== STEP_TOOL) {
-        const result = (done as { result?: unknown } | null)?.result
-        const agentId = e.agentId
-        beside(() => onToolCall($, tool, e, result, agentId))
+      if (tool !== STEP_TOOL && isTaskTool(tool)) {
+        const call: TaskCall = { tool, input: e, result: (done as { result?: unknown } | null)?.result }
+        // Claude's own list is written before the call returns, so an agent started next is placed by it.
+        if (!agentId) await trackMainList($, call)
+        else void trackAgentList($, call, agentId).catch(() => undefined)
       }
     } catch {
       // The panel never gets in the way of a tool call.

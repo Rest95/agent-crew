@@ -432,17 +432,22 @@ export function checklistProgress(items: readonly ChecklistItem[]): { done: numb
 export const isListDone = (items: readonly ChecklistItem[]): boolean => items.length > 0 && items.every(i => i.status === 'completed')
 
 /** Claude's list after one of its calls: a new list starts with a task created after the last one finished, or a TodoWrite that shares no item. */
+/** True when this call starts a new list rather than changing the current one. */
+export function startsNewList(list: Checklist | null, call: TaskCall): boolean {
+  if (!list) return true
+  if (call.tool === 'TaskCreate') return isListDone(list.items)
+  if (call.tool !== 'TodoWrite') return false
+  const todos = applyTaskCall([], call)
+  return todos.length > 0 && !todos.some(t => list.items.some(i => i.key === t.key))
+}
+
 export function applyMainTaskCall(list: Checklist | null, call: TaskCall, heading: string): Checklist | null {
-  const todos = call.tool === 'TodoWrite' ? applyTaskCall([], call) : null
-  const isNew =
-    !list ||
-    (call.tool === 'TaskCreate' && isListDone(list.items)) ||
-    (todos !== null && todos.length > 0 && !todos.some(t => list.items.some(i => i.key === t.key)))
-  const base = isNew ? [] : list.items
+  const isNew = startsNewList(list, call)
+  const base = isNew || !list ? [] : list.items
   const items = applyTaskCall(base, call)
   if (items === base) return list
   if (items.length === 0) return null
-  return { heading: isNew ? heading : list.heading, items }
+  return { heading: isNew || !list ? heading : list.heading, items }
 }
 
 const wordsOf = (s: string): Set<string> => new Set(s.toLowerCase().match(/[a-z0-9]{3,}/g) ?? [])

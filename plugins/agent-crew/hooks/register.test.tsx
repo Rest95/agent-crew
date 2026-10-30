@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { FINDINGS, LEDGER, PLAN_PATH, PLAN_TEXT, STEP_TAIL, WS, bash, finish, plan, request, runs, spawn, start, world } from './fixtures'
-import { call, checklist, submit } from './fixtures'
+import { call, checklist, mainTurn, submit } from './fixtures'
 
 test('a plan script starts the plan view', async ($, on) => {
   const w = world(on)
@@ -307,4 +307,48 @@ test('/clear forgets the list', async ($, on) => {
   await ($.session.end as (e: unknown) => Promise<unknown>)({ sessionId: 's', reason: 'clear' })
   await w.clock.settle()
   expect(checklist(w)).toBeNull()
+})
+
+// ---------------------------------------------------------------------------
+// Final review fixes
+
+test('the action shows as the call starts, not when it ends', async ($, on) => {
+  const w = world(on)
+  on('tool.call', { tool: 'WebFetch' }, () => new Promise(() => undefined) as never)
+  await spawn($, 't1', 'Look it up')
+  void $.tool.call({ tool: 'WebFetch', url: 'https://docs.example.com/a', agentId: 'a-t1' } as never)
+  await w.clock.settle()
+  expect(runs(w)[0]?.action).toBe('⇣ Fetching docs.example.com')
+})
+
+test('a stuck background read never holds up placement or actions', async ($, on) => {
+  const w = world(on)
+  w.usageHangs = true
+  await withList($)
+  await mainTurn($, 'complete')
+  await call($, 'TaskUpdate', { taskId: '1', status: 'completed' })
+  await call($, 'TaskUpdate', { taskId: '2', status: 'in_progress' })
+  await spawn($, 't2', 'Wire the export button')
+  expect(runs(w).find(r => r.agentId === 'a-t2')?.task).toBe(2)
+  await call($, 'Edit', { file_path: '/repo/payments/lib/b.ts' }, 'a-t2')
+  expect(runs(w).find(r => r.agentId === 'a-t2')?.action).toBe('✎ Editing lib/b.ts')
+})
+
+test("a new task list doesn't inherit the last list's agents", async ($, on) => {
+  const w = world(on)
+  await call($, 'TodoWrite', { todos: [{ content: 'alpha', status: 'completed', activeForm: 'a' }, { content: 'beta', status: 'in_progress', activeForm: 'b' }] })
+  await spawn($, 't1', 'beta work')
+  expect(runs(w)[0]?.task).toBe(2)
+  await call($, 'TodoWrite', { todos: [{ content: 'gamma', status: 'pending', activeForm: 'g' }, { content: 'delta', status: 'in_progress', activeForm: 'd' }] })
+  expect(runs(w)[0]?.task).toBeNull()
+})
+
+test("a superpowers plan doesn't adopt everyday agents' task numbers", async ($, on) => {
+  const w = world(on)
+  await withList($)
+  await call($, 'TaskUpdate', { taskId: '2', status: 'in_progress' })
+  await spawn($, 't1', 'Wire the export button')
+  expect(runs(w)[0]?.task).toBe(2)
+  await bash($, `scripts/sdd-workspace ${PLAN_PATH}`)
+  expect(runs(w)[0]?.task).toBeNull()
 })

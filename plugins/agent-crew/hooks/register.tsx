@@ -970,7 +970,7 @@ export const register: Register = on => {
         {list.length > 0 && rule}
         {running.length > 0 && <Text dimColor>{`Working · ${running.length}`}</Text>}
         {running.map(agentLine)}
-        {finished.length > 0 && rule}
+        {finished.length > 0 && running.length > 0 && rule}
         {finished.length > 0 && finishedButton}
         {isOpen &&
           finished.map(r => (

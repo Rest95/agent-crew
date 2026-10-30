@@ -263,3 +263,12 @@ test("a superpowers plan wins over Claude's list", async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /Claude's task list/ })).toBeUndefined()
   await ui.unmount()
 })
+
+test('terminal: no task list and nothing working draws one line, not two', async ($, on) => {
+  world(on)
+  await spawn($, 't1', 'One')
+  await finish($, 'a-t1')
+  const ui = await $.ui.mount(pane('terminal'))
+  expect((await ui.findAll({ type: 'Text', text: /^─+$/ })).length).toBe(1)
+  await ui.unmount()
+})

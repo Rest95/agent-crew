@@ -194,7 +194,8 @@ function desktop(m: Moment): (Img | string)[] {
     } else if (item.kind === 'finished') {
       afterFinished = true
       out.push(`btn:▾ Finished · ${item.count}`)
-    } else if (item.kind === 'path') out.push(`path:${item.text}`)
+    } else if (item.kind === 'heading') out.push(`head:${item.text}`)
+    else if (item.kind === 'path') out.push(`path:${item.text}`)
     else if (item.kind === 'empty') out.push('sec:No subagents yet.')
     else if (item.kind === 'rule') out.push('rule:')
     else if (item.kind === 'group') out.push(`btn:${item.label}`)

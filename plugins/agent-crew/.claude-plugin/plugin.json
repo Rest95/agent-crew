@@ -1,6 +1,6 @@
 {
   "name": "agent-crew",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Agents side panel for any session that uses subagents: what each agent is doing, its progress and its cost. Follows Claude's task list and superpowers plans, in pixel-crab style, with one row above the prompt for progress, model, branch, context and a prompt-cache countdown.",
   "author": {
     "name": "Rest95",

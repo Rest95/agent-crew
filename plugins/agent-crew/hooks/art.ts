@@ -308,8 +308,11 @@ export function agentRowSvg(width: number, run: Run, plan: Plan | null, now: num
   const ctx = ctxPercent(run)
   const progress = progressOf(run)
   const meta = '· ' + runModel(run) + (run.findings && run.status !== 'running' ? `  ·  ${run.findings} findings` : '')
-  const stats = `ctx ${ctx}% · ${fmtTokens(run.contextTokens)}  ≈${fmtCost(run.costUsd)}  ${fmtTime(elapsed(run, now))}`
   const steps = stepsText(run)
+  const tail = `≈${fmtCost(run.costUsd)}  ${fmtTime(elapsed(run, now))}`
+  const full = `ctx ${ctx}% · ${fmtTokens(run.contextTokens)}  ${tail}`
+  // Tight: the steps say more than the token count.
+  const stats = steps && textWidth(steps, 11) > barW - textWidth(full, 11) - 12 ? `ctx ${ctx}%  ${tail}` : full
   const stepsW = Math.max(0, barW - textWidth(stats, 11) - 12)
   const fillW = Math.round(barW * (progress ?? ctx / 100))
   return svg(width, H, `${runCrab(0, 14, run)}
@@ -322,6 +325,9 @@ ${steps && stepsW > 30 ? `<text class="t" x="42" y="${49 + dy}" font-family="${F
 ${statusMark(width - 8, 16, run.status, color)}
 <line class="ln" x1="0" y1="${H - 0.5}" x2="${width}" y2="${H - 0.5}"/>`)
 }
+
+/** A divider the width of the panel: drawn, so it can't wrap as a line of characters would. */
+export const ruleSvg = (width: number): string => svg(width, 3, `<line class="ln" x1="0" y1="1.5" x2="${width}" y2="1.5"/>`)
 
 export const TASK_ROW_HEIGHT = 30
 
@@ -351,6 +357,7 @@ export type PaneItem =
   | { kind: 'group'; key: string; open: boolean; count: number; label: string }
   | { kind: 'path'; text: string }
   | { kind: 'section'; text: string }
+  | { kind: 'heading'; text: string }
   | { kind: 'inline'; text: string }
   | { kind: 'line'; key: string; text: string; agentId?: string }
   | { kind: 'finished'; open: boolean; count: number }
@@ -425,11 +432,14 @@ export function desktopPaneItems(width: number, plan: Plan | null, runs: readonl
   const items: PaneItem[] = []
   if (!plan && runs.length > 0) {
     const heading = noListHeading(runs)
-    items.push({ kind: 'svg', key: 'bar', svg: planBarSvg(heading, noListPhase(runs), running.length, width), height: BAR_HEIGHT, alt: `${heading}: ${noListPhase(runs).label}` })
+    items.push({ kind: 'heading', text: heading })
+    items.push({ kind: 'svg', key: 'bar', svg: planBarSvg('', noListPhase(runs), running.length, width), height: BAR_HEIGHT, alt: `${heading}: ${noListPhase(runs).label}` })
   }
   if (plan) {
     const phase = opts.phase ?? { done: plan.complete.length, total: plan.tasks.length, label: `Tasks ${plan.complete.length}/${plan.tasks.length}`, isFinished: false }
-    items.push({ kind: 'svg', key: 'bar', svg: planBarSvg(plan.title, phase, running.length, width), height: BAR_HEIGHT, alt: `${plan.title}: ${phase.label}` })
+    // The title gets a line of its own: beside the bar a narrow panel would cut it.
+    items.push({ kind: 'heading', text: plan.title })
+    items.push({ kind: 'svg', key: 'bar', svg: planBarSvg('', phase, running.length, width), height: BAR_HEIGHT, alt: `${plan.title}: ${phase.label}` })
     items.push({ kind: 'path', text: plan.path })
   }
   items.push({ kind: 'svg', key: 'totals', svg: totalsSvg(width, cost, tokens, span), height: TOTALS_HEIGHT, alt: `≈${fmtCost(cost)}, ${fmtTokens(tokens)} tokens, ${fmtTime(span)}` })

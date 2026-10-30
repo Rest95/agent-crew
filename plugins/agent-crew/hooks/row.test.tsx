@@ -428,3 +428,18 @@ test('the row paints with theme colours', async ($, on) => {
   expect((await low.find({ type: 'Text', text: /^⧗$/ }))?.props.color).toBe('warning')
   await low.unmount()
 })
+
+test('desktop: the row uses the room it has', async ($, on) => {
+  world(on, {})
+  await start($)
+  await mainTurn($, 'complete')
+  await spawn($, 'x1', 'One', 'Explore')
+  await spawn($, 'x2', 'Two', 'Explore')
+  const ui = await $.ui.mount(row('desktop', 66))
+  expect(await ui.find({ type: 'Text', text: /^2 working · 0 done$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Opus 5\.5 · high$/ })).toBeDefined()
+  await ui.unmount()
+  const wide = await $.ui.mount(row('desktop', 100))
+  expect(await wide.find({ type: 'Text', text: /^[█░]{16}$/ })).toBeDefined()
+  await wide.unmount()
+})

@@ -59,6 +59,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tview:hover .b { text-decoration: underline; }
 .tgroup { border: 0; background: none; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; white-space: pre; }
 .tgroup:hover { text-decoration: underline; }
+.app-head { font-weight: 600; }
 .app-rule { border-top: 1px solid var(--app-line); margin: 4px 0; align-self: stretch; }
 .mainview { margin: 0; font: 500 13px var(--mono); color: var(--accent); }
 
@@ -105,7 +106,7 @@ pre.cmd { margin: 0; font-family: var(--mono); font-size: 13px; background: var(
 
 <div class="wrap">
   <header>
-    <div class="eyebrow">Rest95/agent-crew · v0.5.2 · Claude Code mod</div>
+    <div class="eyebrow">Rest95/agent-crew · v0.5.3 · Claude Code mod</div>
     <h1>agent-crew</h1>
     <p class="lede">An <b>Agents</b> side panel for any Claude Code session that sends subagents to work: for each agent, <b>what it is doing</b>, <b>how far along it is</b> and <b>what it has cost</b>. When Claude keeps a task list, that list becomes the plan; with a superpowers plan, it follows the plan, each task, and whether an agent is <b>implementing</b> or <b>reviewing</b>. One row above the prompt sums it up with the model, branch, context and cache countdown. It all opens by itself; there is nothing to run. The drawings come from the mod's own code and sample sessions. Click an agent to see which transcript would take the main view.</p>
   </header>
@@ -210,6 +211,7 @@ function render() {
     if (typeof item !== 'string') return img(item.svg, item.w, item.h, item.alt) + (item.agentId ? `<button type="button" class="app-view" data-view="${esc(item.agentId)}">${viewing === item.agentId ? 'Viewing' : 'View'}</button>` : '');
     const [kind, ...rest] = item.split(':'), text = esc(rest.join(':'));
     if (kind === 'rule') return '<div class="app-rule"></div>';
+    if (kind === 'head') return `<div class="app-head">${text}</div>`;
     return `<div class="app-${kind === 'btn' ? 'btn' : kind === 'path' ? 'path' : kind === 'more' ? 'more' : 'sec'}">${text}</div>`;
   }).join('');
   const tback = viewing ? '<div class="ln"><button type="button" class="tview" data-view="">← Back to main</button></div>' : '';

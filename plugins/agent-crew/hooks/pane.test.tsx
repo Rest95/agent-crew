@@ -337,3 +337,13 @@ test('terminal: a plan paints with theme colours, done and all', async ($, on) =
   for (const t of await ui.findAll({ type: 'Text' })) expect(DARK_ONLY).not.toContain(t.props.color)
   await ui.unmount()
 })
+
+test('desktop: the divider is drawn, so it never wraps', async ($, on) => {
+  world(on)
+  await spawn($, 't1', 'One')
+  const ui = await $.ui.mount(pane('desktop', 30))
+  expect(await ui.find({ type: 'Text', text: /─/ })).toBeUndefined()
+  expect((await ui.findAll({ type: 'Svg' })).some(el => el.props.alt === 'divider')).toBe(true)
+  expect(await ui.find({ type: 'Text', text: /^1 agent · 1 working · 0 done$/ })).toBeDefined()
+  await ui.unmount()
+})

@@ -8,6 +8,7 @@ import {
   BAR_HEIGHT,
   CACHE_COLOR,
   GLYPH,
+  ruleSvg,
   THEME,
   levelTheme,
   finishedLine,
@@ -43,8 +44,8 @@ import {
   taskRowSvg,
   totalsSvg,
 } from './art'
-import { cacheView, classify, currentTask, isPlanLabel, contextLevel, costOf, countFindings, dueWarning, rowProgress, rowTier, fixRound, parseBranch, parseLedger, parsePlan, parseScriptCall, planPhase, rootOf, samePlan, windowOf, workspaceFrom } from './model'
-import { rowFit, rowPieces } from './model'
+import { cacheView, classify, currentTask, isPlanLabel, contextLevel, costOf, countFindings, dueWarning, rowProgress, fixRound, parseBranch, parseLedger, parsePlan, parseScriptCall, planPhase, rootOf, samePlan, windowOf, workspaceFrom } from './model'
+import { rowFit } from './model'
 import { applyMainTaskCall, applyTaskCall, changesTaskList, namesPath, startsNewList, checklistAsPlan, checklistProgress, describeAction, headingOf, isListDone, isTaskTool, placeAgent } from './model'
 import type { ScriptCall, Usage } from './model'
 
@@ -838,8 +839,10 @@ export const register: Register = (on, options) => {
             ) : item.kind === 'svg' ? (
               <Svg key={item.key} source={item.svg} alt={item.alt} width={W} height={item.height} />
             ) : item.kind === 'rule' ? (
-              <Text key={`i${i}`} dimColor>
-                {'─'.repeat(Math.max(10, Math.floor(W / 8)))}
+              <Svg key={`i${i}`} source={ruleSvg(W)} alt="divider" width={W} height={3} />
+            ) : item.kind === 'heading' ? (
+              <Text key={`i${i}`} bold>
+                {item.text}
               </Text>
             ) : item.kind === 'group' ? (
               <Button key={`group-${item.key}`} label={item.label} plain onPress={() => toggleGroup(item.key, item.open)} />
@@ -1118,16 +1121,15 @@ export const register: Register = (on, options) => {
     const agentsPercent = progress.kind === 'agents' && progress.working + progress.done > 0 ? Math.round((progress.done / (progress.working + progress.done)) * 100) : 0
     const Svg = e.surface !== 'terminal' && 'Svg' in ui ? ui.Svg : null
     const icon = 22
-    const show = Svg
-      ? rowPieces(rowTier(columns))
-      : rowFit(columns, {
-          progress: progress.kind === 'agents' ? { working: progress.working, done: progress.done, percent: `${agentsPercent}%` } : plan && phase ? { title: plan.title, label: phase.label, percent: `${percent}%`, working } : null,
-          model: main.model ? modelName(main.model) : null,
-          effort: main.effort,
-          branch: main.branch,
-          context: main.context === null ? null : `${main.context}%`,
-          cache: cache.text,
-        })
+    // The desktop's text is narrower than its columns suggest, so it fits about a fifth more.
+    const show = rowFit(Svg ? Math.round(columns * 1.2) : columns, {
+      progress: progress.kind === 'agents' ? { working: progress.working, done: progress.done, percent: `${agentsPercent}%` } : plan && phase ? { title: plan.title, label: phase.label, percent: `${percent}%`, working } : null,
+      model: main.model ? modelName(main.model) : null,
+      effort: main.effort,
+      branch: main.branch,
+      context: main.context === null ? null : `${main.context}%`,
+      cache: cache.text,
+    })
     // About 8 CSS px per column on the desktop; the bar takes about a third of the row.
     const barWidth = Math.max(180, Math.min(420, Math.round((e.props.bodyColumns || 120) * 8 * 0.35)))
 

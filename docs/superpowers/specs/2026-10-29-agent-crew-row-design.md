@@ -67,7 +67,7 @@ Drawn on both surfaces, as in the approved mockup (the preview artifact's
   context, plus an 80-px bar) and cache (hourglass), as session-band drew
   them.
 
-**Narrow windows** (0.5.1: in the terminal the row measures its real content and drops whole pieces in order: the working count, the branch, a shorter plan name, the context bar, the progress bar; the desktop keeps fixed widths): the row never wraps (the frame and its padding count
+**Narrow windows** (0.5.1: in the terminal the row measures its real content and drops whole pieces in order: the working count, the branch, a shorter plan name, the context bar, the progress bar; 0.5.3: the desktop measures the same way, counting about a fifth more columns because its text is narrower): the row never wraps (the frame and its padding count
 against the width). As it narrows it drops, in order:
 the branch, the context bar (the percent stays), the progress bar (the pill
 text stays), the `N working` count; `N working · M done` shortens to

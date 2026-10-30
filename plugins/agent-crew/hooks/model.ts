@@ -311,9 +311,6 @@ export function dueWarning(main: Main, now: number): 10 | 5 | null {
 
 export const contextLevel = (percent: number): 'ok' | 'warn' | 'alert' => (percent >= 85 ? 'alert' : percent >= 65 ? 'warn' : 'ok')
 
-/** How much of the row fits: 0 all; 1 no branch; 2 also no context bar; 3 also no progress bar or working count. */
-export const rowTier = (columns: number): 0 | 1 | 2 | 3 => (columns >= 110 ? 0 : columns >= 90 ? 1 : columns >= 70 ? 2 : 3)
-
 /** What the row shows, in whole pieces. */
 export type RowShow = { titleMax: number; bar: boolean; working: boolean; branch: boolean; contextBar: boolean; effort: boolean }
 
@@ -368,9 +365,6 @@ export function rowWidth(show: RowShow, c: RowContent): number {
 /** The most the row can show in these columns. */
 export const rowFit = (columns: number, content: RowContent): RowShow =>
   ROW_STEPS.find(step => rowWidth(step, content) <= columns) ?? (ROW_STEPS[ROW_STEPS.length - 1] as RowShow)
-
-/** The desktop draws the row in its own proportions: its pieces go by the window's width alone. */
-export const rowPieces = (tier: 0 | 1 | 2 | 3): RowShow => ({ titleMax: tier === 0 ? 28 : 18, bar: tier < 3, working: tier === 0, branch: tier === 0, contextBar: tier < 2, effort: tier < 3 })
 
 /** The branch `git branch --show-current` printed; null on an error or a detached HEAD. */
 export const parseBranch = (exitCode: number, stdout: string): string | null => (exitCode === 0 && stdout.trim() ? stdout.trim() : null)

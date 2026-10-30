@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { Plan, Run } from '../types'
 import { TYPE_PALETTE, agentRowSvg, colorOf, desktopPaneItems, bar, contextBarSvg, contextRingSvg, fmtTime, fmtTokens, hourglassSvg, runRole, runTitle, taskRowSvg } from './art'
-import { agentRowHeight, finishedLine, planGroups, stepsText } from './art'
+import { agentRowHeight, finishedLine, planGroups, ruleSvg, stepsText } from './art'
 
 const plan: Plan = {
   path: 'docs/plans/x.md',
@@ -92,7 +92,7 @@ test('taskRowSvg: at most 8 crabs, then +N', () => {
 test('desktopPaneItems: the plan view grouped by task, the same list the preview draws', () => {
   const items = desktopPaneItems(360, plan, [run({ id: 'a' }), run({ id: 'b', status: 'done' })], 0, { finishedOpen: true })
   // Header, a line, then each task: its row, its toggle and (open) its agents; the current task starts open.
-  expect(items.map(i => i.kind)).toEqual(['svg', 'path', 'svg', 'rule', 'svg', 'group', 'svg', 'svg', 'svg'])
+  expect(items.map(i => i.kind)).toEqual(['heading', 'svg', 'path', 'svg', 'rule', 'svg', 'group', 'svg', 'svg', 'svg'])
   expect(items.filter(i => i.kind === 'group').map(i => (i as { label: string }).label)).toEqual(['▾ 2 agents'])
 })
 
@@ -137,8 +137,10 @@ test('desktopPaneItems: the no-list view', () => {
     run({ id: 'c', role: 'other', task: null, label: 'Three', status: 'done', startedAt: 2, endedAt: 3 }),
   ]
   const items = desktopPaneItems(300, null, runs, 10, { finishedOpen: false })
-  const first = items[0]
-  expect(first?.kind === 'svg' ? first.alt : '').toContain('3 agents · 2 working · 1 done')
+  expect(items[0]).toEqual({ kind: 'heading', text: '3 agents · 2 working · 1 done' })
+  const bar = items[1]
+  expect(bar?.kind === 'svg' ? bar.svg : '').toContain('1/3 done')
+  expect(bar?.kind === 'svg' ? bar.svg : '').not.toContain('working')
   const rule = items.findIndex(i => i.kind === 'rule')
   expect(rule).toBeGreaterThan(0)
   expect(items[rule + 1]).toEqual({ kind: 'section', text: 'Working · 2' })
@@ -155,4 +157,27 @@ test('stepsText: a checklist when the agent keeps one, else the steps it has tak
   expect(stepsText(run({ steps: 14 }))).toBe('14 steps')
   expect(stepsText(run({ steps: 1 }))).toBe('1 step')
   expect(stepsText(run({}))).toBe('')
+})
+
+// ---------------------------------------------------------------------------
+// What the real desktop app showed
+
+test('agentRowSvg: a narrow row gives up its tokens before its steps', () => {
+  const r = run({ role: 'other', task: null, label: 'One', steps: 2, contextTokens: 45_000 })
+  const narrow = agentRowSvg(245, r, null, 8000)
+  expect(narrow).toContain('2 steps')
+  expect(narrow).not.toContain('45k')
+  expect(agentRowSvg(500, r, null, 8000)).toContain('45k')
+})
+
+test('the plan heading sits on its own line, whole', () => {
+  const long = { ...plan, title: 'A rather long plan title that would never fit beside its bar' }
+  const items = desktopPaneItems(245, long, [], 0, { finishedOpen: false })
+  expect(items[0]).toEqual({ kind: 'heading', text: long.title })
+  const bar = items[1]
+  expect(bar?.kind === 'svg' ? bar.svg : '').not.toContain('A rather')
+})
+
+test('ruleSvg: a drawn line the width of the panel', () => {
+  expect(ruleSvg(245)).toContain('x2="245"')
 })

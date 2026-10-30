@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { Main, Plan, Run } from '../types'
-import { cacheView, classify, currentTask, isPlanLabel, contextLevel, costOf, countFindings, dueWarning, parseBranch, parseLedger, parsePlan, parseScriptCall, planPhase, rowProgress, rowTier, windowOf, workspaceFrom } from './model'
+import { cacheView, classify, currentTask, isPlanLabel, contextLevel, costOf, countFindings, dueWarning, parseBranch, parseLedger, parsePlan, parseScriptCall, planPhase, rowProgress, windowOf, workspaceFrom } from './model'
 import { rowFit, rowWidth } from './model'
 import type { RowContent } from './model'
 import { applyMainTaskCall, applyTaskCall, checklistAsPlan, checklistProgress, describeAction, headingOf, isListDone, placeAgent } from './model'
@@ -204,9 +204,8 @@ test('dueWarning: 10 then 5 minutes, once each, never while busy', () => {
   expect(dueWarning(main({ expiresAt: NOW + 900_000 }), NOW)).toBeNull()
 })
 
-test('contextLevel, rowTier and parseBranch', () => {
+test('contextLevel and parseBranch', () => {
   expect([contextLevel(64), contextLevel(65), contextLevel(85)]).toEqual(['ok', 'warn', 'alert'])
-  expect([rowTier(120), rowTier(95), rowTier(75), rowTier(40)]).toEqual([0, 1, 2, 3])
   expect(parseBranch(0, 'feat/x\n')).toBe('feat/x')
   expect(parseBranch(0, '')).toBeNull()
   expect(parseBranch(128, 'fatal')).toBeNull()

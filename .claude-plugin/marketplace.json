@@ -12,7 +12,7 @@
       "name": "agent-crew",
       "source": "./plugins/agent-crew",
       "description": "See what each subagent is doing, how far along it is and what it costs, in a side panel and a row above the prompt.",
-      "version": "0.5.2",
+      "version": "0.5.3",
       "category": "mod"
     }
   ]

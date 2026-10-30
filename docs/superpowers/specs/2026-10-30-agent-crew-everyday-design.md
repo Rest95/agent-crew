@@ -16,6 +16,10 @@ command receives no plugin options or paths (checked in a real session), so the
 mod writes the choice to `agent-list` in the plugin's data folder and the command
 reads it. The `step` tool now registers when the first implementer starts.
 
+0.5.3, after the first run in the real desktop app: the heading sits on its own
+line above the bar, the divider is drawn rather than typed, a narrow agent row
+gives up its token count before its steps, and the row measures its content.
+
 ## Why
 
 The owner's own workflow is superpowers, but the mod is now public

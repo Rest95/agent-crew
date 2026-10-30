@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { FINDINGS, LEDGER, PLAN_PATH, PLAN_TEXT, STEP_TAIL, WS, bash, finish, plan, request, runs, spawn, start, world } from './fixtures'
+import { call, checklist, submit } from './fixtures'
 
 test('a plan script starts the plan view', async ($, on) => {
   const w = world(on)
@@ -200,4 +201,110 @@ test('an agent labelled like a plan task finds the plan in progress when none is
   await spawn($, 't1', 'Implement Task 1: API client')
   expect(plan(w)).toMatchObject({ path: PLAN_PATH, workspace: WS })
   expect(runs(w)[0]).toMatchObject({ role: 'implement', task: 1 })
+})
+
+// ---------------------------------------------------------------------------
+// Everyday mode: Claude's task list, agents' actions and their own lists
+
+async function withList($: Parameters<typeof spawn>[0]) {
+  await submit($, 'Add CSV export to the reports page')
+  await call($, 'TaskCreate', { subject: 'Add the CSV writer', description: 'd' })
+  await call($, 'TaskCreate', { subject: 'Wire the export button', description: 'd' })
+  await call($, 'TaskUpdate', { taskId: '1', status: 'in_progress' })
+}
+
+test("Claude's task list is tracked from the main conversation", async ($, on) => {
+  const w = world(on)
+  await withList($)
+  const list = checklist(w)
+  expect(list?.heading).toBe('Add CSV export to the reports page')
+  expect(list?.items.map(i => [i.text, i.n, i.status])).toEqual([
+    ['Add the CSV writer', 1, 'in_progress'],
+    ['Wire the export button', 2, 'pending'],
+  ])
+})
+
+test('an agent sits under the task in progress when it starts', async ($, on) => {
+  const w = world(on)
+  await withList($)
+  await spawn($, 't1', 'Write the CSV writer')
+  expect(runs(w)[0]).toMatchObject({ role: 'other', task: 1 })
+})
+
+test("an agent's action and steps follow its own tool calls", async ($, on) => {
+  const w = world(on)
+  await spawn($, 't1', 'Look around')
+  await call($, 'Edit', { file_path: '/repo/payments/lib/a.ts' }, 'a-t1')
+  expect(runs(w)[0]?.action).toBe('✎ Editing lib/a.ts')
+  await call($, 'Grep', { pattern: 'x' }, 'a-t1')
+  expect(runs(w)[0]).toMatchObject({ action: '⌕ Searching "x"', steps: 2 })
+})
+
+test('two agents keep their own actions', async ($, on) => {
+  const w = world(on)
+  await spawn($, 't1', 'One')
+  await spawn($, 't2', 'Two')
+  await call($, 'Edit', { file_path: '/repo/payments/a.ts' }, 'a-t1')
+  await call($, 'Read', { file_path: '/repo/payments/b.ts' }, 'a-t2')
+  await call($, 'Grep', { pattern: 'y' }, 'a-t1')
+  const [one, two] = [runs(w).find(r => r.agentId === 'a-t1'), runs(w).find(r => r.agentId === 'a-t2')]
+  expect(one).toMatchObject({ action: '⌕ Searching "y"', steps: 2 })
+  expect(two).toMatchObject({ action: '⌕ Reading b.ts', steps: 1 })
+})
+
+test("an agent's own checklist is its progress", async ($, on) => {
+  const w = world(on)
+  await withList($)
+  const before = checklist(w)
+  await spawn($, 't1', 'Write the CSV writer')
+  const todos = [
+    { content: 'Read the code', status: 'completed', activeForm: 'Reading the code' },
+    { content: 'Write the tests', status: 'in_progress', activeForm: 'Writing the tests' },
+    { content: 'Write the writer', status: 'pending', activeForm: 'Writing the writer' },
+    { content: 'Run the tests', status: 'pending', activeForm: 'Running the tests' },
+  ]
+  await call($, 'TodoWrite', { todos }, 'a-t1')
+  expect(runs(w)[0]).toMatchObject({ stepDone: 1, stepTotal: 4, stepNote: 'Writing the tests', stepSource: 'list' })
+  expect(checklist(w)).toEqual(before)
+})
+
+test("a subagent's TaskUpdate never touches Claude's list", async ($, on) => {
+  const w = world(on)
+  await withList($)
+  await spawn($, 't1', 'Write the CSV writer')
+  await call($, 'TaskUpdate', { taskId: '1', status: 'completed' }, 'a-t1')
+  expect(checklist(w)?.items[0]?.status).toBe('in_progress')
+})
+
+test("the step tool wins over an agent's own checklist", async ($, on) => {
+  const w = world(on)
+  await spawn($, 't1', 'One')
+  await call($, 'mcp__agent-crew__step', { done: 2, total: 5, note: 'mock' }, 'a-t1')
+  await call($, 'TodoWrite', { todos: [{ content: 'a', status: 'pending', activeForm: 'a' }] }, 'a-t1')
+  expect(runs(w)[0]).toMatchObject({ stepDone: 2, stepTotal: 5, stepNote: 'mock', stepSource: 'tool' })
+})
+
+test('unreadable task calls change nothing and pass their result back', async ($, on) => {
+  const w = world(on)
+  w.taskCreateNull = true
+  const done = await call($, 'TaskCreate', { subject: 'A', description: 'd' })
+  expect(checklist(w)).toBeNull()
+  expect(done).toMatchObject({ result: null })
+})
+
+test('a finished list gives way to the next agent', async ($, on) => {
+  const w = world(on)
+  await withList($)
+  await call($, 'TaskUpdate', { taskId: '1', status: 'completed' })
+  await call($, 'TaskUpdate', { taskId: '2', status: 'completed' })
+  await spawn($, 't9', 'Something else')
+  expect(checklist(w)).toBeNull()
+})
+
+test('/clear forgets the list', async ($, on) => {
+  const w = world(on)
+  await withList($)
+  await ($.session.end as (e: unknown) => Promise<unknown>)({ sessionId: 's', reason: 'clear' })
+  await w.clock.settle()
+  expect(checklist(w)).toBeNull()
 })

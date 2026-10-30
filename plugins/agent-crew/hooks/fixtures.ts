@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 import { mock } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-import type { Main, Plan, Run } from '../types'
+import type { Checklist, Main, Plan, Run } from '../types'
 
 export const PLAN_PATH = 'docs/plans/payments.md'
 export const WS = '/repo/.superpowers/sdd/payments'
@@ -17,6 +17,10 @@ export const FINDINGS = '### Issues\n#### Critical (Must Fix)\n- a.ts:3 wrong\n#
 export const find = (keys: Iterable<string>, path: string): string | undefined => [...keys].find(k => path === k || path.endsWith('/' + k))
 
 export type World = {
+  /** Task ids handed out by the TaskCreate stand-in. */
+  taskIds: number
+  /** The TaskCreate stand-in answers `{ result: null }`. */
+  taskCreateNull: boolean
   files: Map<string, string>
   dirs: Set<string>
   opened: string[]
@@ -63,7 +67,7 @@ const settle = async () => {
 // The engine beneath the mod: files, the Bash tool, agents and the pane, all faked.
 export function world(on: On, files: Record<string, string> = { [PLAN_PATH]: PLAN_TEXT }): World {
   const clock = mock.clock(on, { now: START })
-  const w: World = { files: new Map(Object.entries(files)), dirs: new Set([WS]), opened: [], openArgs: [], prompts: [], stored: new Map(), stdout: null, context: 34, branch: 'feat/payments', pushes: true, notified: [], toasts: [], sessionModel: 'claude-opus-5-5', gitHangs: false, gitRuns: 0, gitHold: null, holdNextGit: false, agentStatus: new Map(), commands: [], slowFiles: new Set(), mtimes: new Map(), usageHangs: false, views: [], viewDenied: false, clock }
+  const w: World = { taskIds: 0, taskCreateNull: false, files: new Map(Object.entries(files)), dirs: new Set([WS]), opened: [], openArgs: [], prompts: [], stored: new Map(), stdout: null, context: 34, branch: 'feat/payments', pushes: true, notified: [], toasts: [], sessionModel: 'claude-opus-5-5', gitHangs: false, gitRuns: 0, gitHold: null, holdNextGit: false, agentStatus: new Map(), commands: [], slowFiles: new Set(), mtimes: new Map(), usageHangs: false, views: [], viewDenied: false, clock }
   current = w
   // What the mod writes to $.state, watched on its way to the kit's own store.
   on('state.set', (_$, e, next) => {
@@ -96,6 +100,15 @@ export function world(on: On, files: Record<string, string> = { [PLAN_PATH]: PLA
     return { value: { kind: w.dirs.has(path) ? 'dir' : 'file', size: 0, mtimeMs: w.mtimes.get(path) ?? 1, isLink: false } } as never
   })
   on('ui.panes', () => ({ value: [] }) as never)
+  // The task-list tools and a few working tools, as Claude Code answers them.
+  on('tool.call', { tool: 'TaskCreate' }, (_$, e) => {
+    if (w.taskCreateNull) return { result: null } as never
+    const subject = String((e as { subject?: unknown }).subject ?? '')
+    return { result: { task: { id: String(++w.taskIds), subject } } } as never
+  })
+  on('tool.call', { tool: 'TaskUpdate' }, (_$, e) => ({ result: { success: true, taskId: String((e as { taskId?: unknown }).taskId), updatedFields: [] } }) as never)
+  on('tool.call', { tool: /^(TodoWrite|Read|Edit|Grep)$/ }, () => ({ result: {} }) as never)
+  on('prompt.submit', (_$, e) => ({ text: (e as { text: string }).text }) as never)
   on('tool.call', { tool: 'Bash' }, (_$, e) => {
     const command = String((e as { command?: unknown }).command)
     const stdout = w.stdout ?? (command.includes('sdd-workspace') ? `${WS}\n` : command.includes('task-start') ? `brief: ${WS}/task-2-brief.md\nbase: abc123\n` : '')
@@ -196,3 +209,16 @@ export const mainEnd = async ($: Engine, reason: string) => {
   await settle()
   return done
 }
+
+/** A tool call from the main conversation, or from the agent `agentId`. */
+export const call = async ($: Engine, tool: string, input: Record<string, unknown>, agentId?: string) => {
+  const done = await $.tool.call({ tool, ...input, ...(agentId ? { agentId } : {}) } as never)
+  await settle()
+  return done
+}
+/** The person submits a prompt. */
+export const submit = async ($: Engine, text: string) => {
+  await ($.prompt.submit as (e: unknown) => Promise<unknown>)({ text, wait: false, origin: {} })
+  await settle()
+}
+export const checklist = (w: World) => (w.stored.get('checklist') ?? null) as Checklist | null

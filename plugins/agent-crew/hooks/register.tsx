@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Main, Plan, Run } from '../types'
+import type { Checklist, Main, Plan, Run } from '../types'
 import {
   ACCENT,
   AGENT_ROW_HEIGHT,
@@ -42,6 +42,7 @@ import {
   totalsSvg,
 } from './art'
 import { cacheView, classify, currentTask, isPlanLabel, contextLevel, costOf, countFindings, dueWarning, rowProgress, rowTier, fixRound, parseBranch, parseLedger, parsePlan, parseScriptCall, planPhase, rootOf, samePlan, windowOf, workspaceFrom } from './model'
+import { applyMainTaskCall, applyTaskCall, checklistAsPlan, checklistProgress, describeAction, headingOf, isListDone, isTaskTool, placeAgent } from './model'
 import type { ScriptCall, Usage } from './model'
 
 const PANE = 'agent-crew'
@@ -71,6 +72,16 @@ const mainAtom = atom({ plugin: 'agent-crew', key: 'main' } as const, {
   lastServedAt: null,
 } as Main)
 const cacheLeftAtom = atom({ plugin: 'agent-crew', key: 'cacheLeft' } as const, -1)
+const checklistAtom = atom({ plugin: 'agent-crew', key: 'checklist' } as const, null as Checklist | null)
+const promptAtom = atom({ plugin: 'agent-crew', key: 'prompt' } as const, '')
+
+/** What the panel and the row draw as the plan: superpowers' plan, else Claude's own task list. */
+const shownPlan = async ($: EngineInterface): Promise<Plan | null> => {
+  const plan: Plan | null = await read($, planAtom)
+  if (plan) return plan
+  const list: Checklist | null = await read($, checklistAtom)
+  return list ? checklistAsPlan(list) : null
+}
 
 const CACHE_TTL_MS = 60 * 60 * 1000
 const RECONCILE_EVERY_TICKS = 5
@@ -151,7 +162,7 @@ async function tickRow($: EngineInterface): Promise<void> {
     const left = Math.max(0, Math.floor((main.expiresAt - now) / 1000))
     if ((await read($, cacheLeftAtom)) !== left) await update($, cacheLeftAtom, () => left)
   }
-  const plan: Plan | null = await read($, planAtom)
+  const plan = await shownPlan($)
   if (plan && main.planDoneAt === null && planPhase(plan, await read($, runsAtom)).isFinished) await setMain($, { planDoneAt: now })
   // Outside a repository there is nothing to poll; a Bash call (a cd, a git init) reads it again.
   ticks = (ticks + 1) % BRANCH_EVERY_TICKS
@@ -352,6 +363,38 @@ const stdoutOf = (done: unknown): string => {
   return typeof stdout === 'string' ? stdout : ''
 }
 
+/** Everyday tracking: Claude's task list from the main conversation; an agent's action, steps and own list from its loop. */
+async function onToolCall($: EngineInterface, tool: string, input: unknown, result: unknown, agentId: string | undefined): Promise<void> {
+  const call = { tool, input, result }
+  if (!agentId) {
+    if (!isTaskTool(tool)) return
+    const heading = headingOf(await read($, promptAtom))
+    let list: Checklist | null = null
+    await update($, checklistAtom, (current: Checklist | null) => (list = applyMainTaskCall(current, call, heading)))
+    // A list at work starts the row's Done afresh (superpowers keeps its own).
+    if (list && !isListDone((list as Checklist).items) && (await read($, planAtom)) === null) await setMain($, { planDoneAt: null })
+    return
+  }
+  const action = describeAction(tool, input, await $.session.cwd().catch(() => null))
+  await update($, runsAtom, (runs: Run[]) => {
+    const run = newestOf(runs, agentId)
+    if (!run || run.status !== 'running') return runs
+    let next: Run = { ...run, ...(action ? { action } : {}), ...(isTaskTool(tool) ? {} : { steps: (run.steps ?? 0) + 1 }) }
+    if (isTaskTool(tool)) {
+      const base = run.ownList ?? []
+      const own = applyTaskCall(base, call)
+      if (own !== base) {
+        next = { ...next, ownList: own }
+        if (run.stepSource !== 'tool') {
+          const p = checklistProgress(own)
+          next = { ...next, stepDone: p.done, stepTotal: p.total, stepNote: p.note, stepSource: 'list' }
+        }
+      }
+    }
+    return runs.map(r => (r === run ? next : r))
+  })
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
@@ -427,6 +470,33 @@ export const register: Register = on => {
     return { text: 'Crew panel opened.' }
   })
 
+  // Every tool call: what an agent is doing, and task lists. Beside the call, never in its way.
+  on('tool.call', async ($, e, next) => {
+    const done = await next(e)
+    try {
+      const tool = String((e as { tool?: unknown }).tool ?? '')
+      if (tool !== STEP_TOOL) {
+        const result = (done as { result?: unknown } | null)?.result
+        const agentId = e.agentId
+        beside(() => onToolCall($, tool, e, result, agentId))
+      }
+    } catch {
+      // The panel never gets in the way of a tool call.
+    }
+    return done
+  })
+
+  // The person's latest prompt: the heading of the next task list.
+  on('prompt.submit', async ($, e, next) => {
+    const entered = await next(e)
+    try {
+      if (!e.isMeta && !e.command && entered && !('drop' in entered && entered.drop)) beside(() => update($, promptAtom, () => e.text))
+    } catch {
+      // Nothing to remember.
+    }
+    return entered
+  })
+
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const done = await next(e)
     try {
@@ -454,7 +524,7 @@ export const register: Register = on => {
       matched = true
       const total = Math.max(0, Math.round(input.total ?? run.stepTotal ?? 0))
       const doneSteps = Math.max(0, Math.round(input.done ?? run.stepDone ?? 0))
-      const stepped: Run = { ...run, stepTotal: total, stepDone: total ? Math.min(total, doneSteps) : doneSteps, stepNote: input.note?.trim() || undefined }
+      const stepped: Run = { ...run, stepTotal: total, stepDone: total ? Math.min(total, doneSteps) : doneSteps, stepNote: input.note?.trim() || undefined, stepSource: 'tool' }
       return list.map(r => (r === run ? stepped : r))
     })
     return { result: matched ? 'ok' : `ignored: no running row for agent ${agentId}` }
@@ -482,6 +552,12 @@ export const register: Register = on => {
       // The controller ledgers a task right before starting the next agent: read it first.
       await refreshLedger($)
       kind = classify(e.description, await read($, planAtom), await read($, runsAtom))
+      // No superpowers plan: Claude's own list places the agent, and a finished list gives way.
+      if ((await read($, planAtom)) === null) {
+        const list: Checklist | null = await read($, checklistAtom)
+        if (list && isListDone(list.items)) await update($, checklistAtom, () => null)
+        else if (list) kind = { ...kind, task: placeAgent(list.items, e.description) }
+      }
     } catch {
       // Keep the plain row.
     }
@@ -530,7 +606,11 @@ export const register: Register = on => {
   // /clear starts a new conversation: the old one's cache and context no longer apply.
   on('session.end', async ($, e, next) => {
     const ended = await next(e)
-    if (e.reason === 'clear') await setMain($, { busy: false, expiresAt: null, warned: 0, context: null, lastServedAt: null }).catch(() => undefined)
+    if (e.reason === 'clear') {
+      await setMain($, { busy: false, expiresAt: null, warned: 0, context: null, lastServedAt: null }).catch(() => undefined)
+      await update($, checklistAtom, () => null).catch(() => undefined)
+      await update($, promptAtom, () => '').catch(() => undefined)
+    }
     return ended
   })
 

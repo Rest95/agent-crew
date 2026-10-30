@@ -1,0 +1,5 @@
+# Laid by Claude Code when it loads the mod; regenerated on every load.
+plugins/*/.claude-plugin/types/
+.DS_Store
+preview/
+.superpowers/

@@ -1,0 +1,8 @@
+{
+  "name": "agent-crew",
+  "version": "0.3.0",
+  "description": "Agents side panel that follows a superpowers plan as it runs (tasks, progress, who is implementing or reviewing) and lists every subagent, in pixel-crab style; plus one row above the prompt with total progress, model, branch, context and a prompt-cache countdown.",
+  "author": { "name": "Rest95", "url": "https://github.com/Rest95" },
+  "types": "./types/index.d.ts",
+  "license": "MIT"
+}

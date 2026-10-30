@@ -1,0 +1,1 @@
+{"subagentStatusLine":{"type":"command","command":"grep -oE '\"id\"[[:space:]]*:[[:space:]]*\"[^\"]*\"' | sed -E 's/.*:[[:space:]]*\"([^\"]*)\"/{\"id\":\"\\1\",\"content\":\"\"}/'"}}

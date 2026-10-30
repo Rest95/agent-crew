@@ -2,6 +2,8 @@ import { expect, test } from 'claude-code/testing'
 
 import type { Main, Plan, Run } from '../types'
 import { cacheView, classify, currentTask, isPlanLabel, contextLevel, costOf, countFindings, dueWarning, parseBranch, parseLedger, parsePlan, parseScriptCall, planPhase, rowProgress, rowTier, windowOf, workspaceFrom } from './model'
+import { applyMainTaskCall, applyTaskCall, checklistAsPlan, checklistProgress, describeAction, headingOf, isListDone, placeAgent } from './model'
+import type { ChecklistItem } from '../types'
 
 const PLAN_TEXT = '# Payments Module Implementation Plan\n\n### Task 1: API client\n```md\n### Task 9: not a task\n```\n## Task 2: Background jobs\n'
 
@@ -259,4 +261,102 @@ test('countFindings: only the top-level items count, not the bullets under them'
     '- naming',
   ].join('\n')
   expect(countFindings(answer)).toBe(2)
+})
+
+// ---------------------------------------------------------------------------
+// Everyday mode: actions and checklists
+
+test('describeAction: one line per kind of tool', () => {
+  expect(describeAction('Edit', { file_path: '/repo/app/lib/export/csv.ts' }, '/repo/app')).toBe('✎ Editing lib/export/csv.ts')
+  expect(describeAction('Read', { file_path: '/etc/hosts' }, '/repo/app')).toBe('⌕ Reading /etc/hosts')
+  expect(describeAction('Grep', { pattern: 'toLocaleDateString' }, null)).toBe('⌕ Searching "toLocaleDateString"')
+  expect(describeAction('Glob', { pattern: '**/*.ts' }, null)).toBe('⌕ Finding **/*.ts')
+  expect(describeAction('Bash', { command: 'pnpm test', description: 'Run the tests' }, null)).toBe('▶ Running Run the tests')
+  expect(describeAction('Bash', { command: 'pnpm ts-prune' }, null)).toBe('▶ Running pnpm ts-prune')
+  expect(describeAction('WebFetch', { url: 'https://docs.example.com/a' }, null)).toBe('⇣ Fetching docs.example.com')
+  expect(describeAction('WebSearch', { query: 'x' }, null)).toBe('⇣ Searching the web')
+  expect(describeAction('Agent', { description: 'Map routes' }, null)).toBe('↳ Starting Map routes')
+  expect(describeAction('mcp__github__create_issue', {}, null)).toBe('· create_issue')
+  expect(describeAction('TodoWrite', { todos: [] }, null)).toBeNull()
+})
+
+test('describeAction: always one short line', () => {
+  expect(describeAction('Bash', { command: 'cd a\nnpm test' }, null)).toBe('▶ Running cd a')
+  const long = describeAction('Bash', { command: 'x'.repeat(200) }, null) ?? ''
+  expect(long.length).toBeLessThanOrEqual(60)
+  expect(long.endsWith('…')).toBe(true)
+  const path = describeAction('Edit', { file_path: '/' + 'deep/'.repeat(24) + 'file.ts' }, null) ?? ''
+  expect(path.length).toBeLessThanOrEqual(60)
+  expect(path.startsWith('✎ Editing …')).toBe(true)
+  expect(describeAction('Grep', { pattern: '' }, null)).toBe('⌕ Searching ""')
+})
+
+const create = (id: string, subject: string) => ({ tool: 'TaskCreate', input: { subject }, result: { task: { id, subject } } })
+const updateTask = (taskId: string, change: Record<string, unknown>) => ({ tool: 'TaskUpdate', input: { taskId, ...change }, result: { success: true, taskId, updatedFields: Object.keys(change) } })
+const todos = (list: [string, ChecklistItem['status'], string?][]) => ({ tool: 'TodoWrite', input: { todos: list.map(([content, status, activeForm]) => ({ content, status, activeForm: activeForm ?? content })) }, result: {} })
+
+test('applyTaskCall: create, update, delete by id', () => {
+  let items = applyTaskCall([], create('1', 'A'))
+  items = applyTaskCall(items, create('2', 'B'))
+  items = applyTaskCall(items, updateTask('1', { status: 'completed' }))
+  items = applyTaskCall(items, updateTask('2', { status: 'deleted' }))
+  expect(items.map(({ key, n, text, status }) => ({ key, n, text, status }))).toEqual([{ key: '1', n: 1, text: 'A', status: 'completed' }])
+  items = applyTaskCall(items, create('3', 'C'))
+  expect(items.find(i => i.key === '3')?.n).toBe(3)
+})
+
+test('applyTaskCall: TodoWrite keeps numbers by text', () => {
+  let items = applyTaskCall([], todos([['a', 'pending'], ['b', 'pending']]))
+  items = applyTaskCall(items, todos([['a', 'completed'], ['c', 'in_progress', 'Doing c'], ['b', 'pending']]))
+  expect(items.map(i => [i.text, i.n, i.status])).toEqual([['a', 1, 'completed'], ['c', 3, 'in_progress'], ['b', 2, 'pending']])
+  expect(items.find(i => i.text === 'c')?.active).toBe('Doing c')
+})
+
+test('applyTaskCall: unreadable calls change nothing', () => {
+  const items = applyTaskCall([], create('1', 'A'))
+  expect(applyTaskCall(items, { tool: 'TaskCreate', input: { subject: 'B' }, result: null })).toBe(items)
+  expect(applyTaskCall(items, { tool: 'TaskCreate', input: { subject: 'B' }, result: {} })).toBe(items)
+  expect(applyTaskCall(items, { tool: 'TodoWrite', input: { todos: 'x' }, result: {} })).toBe(items)
+  expect(applyTaskCall(items, updateTask('9', { status: 'completed' }))).toBe(items)
+})
+
+test('applyMainTaskCall: a new list after a finished one, or a TodoWrite with new texts', () => {
+  let list = applyMainTaskCall(null, create('1', 'A'), 'first')
+  list = applyMainTaskCall(list, updateTask('1', { status: 'completed' }), 'ignored')
+  expect(list?.heading).toBe('first')
+  list = applyMainTaskCall(list, create('2', 'B'), 'second')
+  expect(list?.heading).toBe('second')
+  expect(list?.items.map(i => i.text)).toEqual(['B'])
+  let todoList = applyMainTaskCall(null, todos([['a', 'in_progress']]), 'first')
+  todoList = applyMainTaskCall(todoList, todos([['a', 'completed'], ['b', 'pending']]), 'not new')
+  expect(todoList?.heading).toBe('first')
+  todoList = applyMainTaskCall(todoList, todos([['x', 'pending']]), 'second')
+  expect(todoList?.heading).toBe('second')
+  expect(applyMainTaskCall(null, { tool: 'TaskCreate', input: {}, result: null }, 'h')).toBeNull()
+})
+
+const item = (n: number, text: string, status: ChecklistItem['status']): ChecklistItem => ({ key: String(n), n, text, status })
+
+test('placeAgent: one, several, none', () => {
+  expect(placeAgent([item(1, 'Find reports', 'completed'), item(2, 'Add the CSV writer', 'in_progress')], 'anything')).toBe(2)
+  const two = [item(2, 'Add the CSV writer', 'in_progress'), item(3, 'Wire the export button', 'in_progress')]
+  expect(placeAgent(two, 'Write the CSV writer and tests')).toBe(2)
+  expect(placeAgent(two, 'Something unrelated')).toBe(3)
+  expect(placeAgent([item(1, 'A', 'pending')], 'A')).toBeNull()
+})
+
+test('checklistProgress and isListDone', () => {
+  const items = [item(1, 'a', 'completed'), { ...item(2, 'b', 'in_progress'), active: 'Writing the tests' }, item(3, 'c', 'pending')]
+  expect(checklistProgress(items)).toEqual({ done: 1, total: 3, note: 'Writing the tests' })
+  expect(isListDone(items)).toBe(false)
+  expect(isListDone([item(1, 'a', 'completed')])).toBe(true)
+  expect(isListDone([])).toBe(false)
+})
+
+test('checklistAsPlan and headingOf', () => {
+  const plan = checklistAsPlan({ heading: 'Add CSV export', items: [item(1, 'Find', 'completed'), item(2, 'Write', 'in_progress'), item(4, 'Wire', 'pending')] })
+  expect(plan).toEqual({ path: "Claude's task list", title: 'Add CSV export', tasks: [{ n: 1, title: 'Find' }, { n: 2, title: 'Write' }, { n: 4, title: 'Wire' }], complete: [1], current: 2, workspace: null, inline: false })
+  expect(headingOf('\n  Add CSV export to the reports page\nmore')).toBe('Add CSV export to the reports page')
+  expect(headingOf('   ')).toBe("Claude's task list")
+  expect(headingOf('y'.repeat(100)).length).toBeLessThanOrEqual(60)
 })

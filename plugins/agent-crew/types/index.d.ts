@@ -16,6 +16,28 @@ export type Plan = {
   inline: boolean
 }
 
+/** One item of a task list: Claude's own (the main conversation's) or an agent's. */
+export type ChecklistItem = {
+  /** The task id, or the todo's text for `TodoWrite`. */
+  key: string
+  /** Stable within its list: agents are placed under it by this number. */
+  n: number
+  text: string
+  /** The present-continuous form shown while it is in progress. */
+  active?: string
+  status: 'pending' | 'in_progress' | 'completed'
+}
+
+/** Claude's task list in the main conversation, shown as the plan when no superpowers plan runs. */
+export type Checklist = {
+  /** The prompt that started it, first line. */
+  heading: string
+  items: ChecklistItem[]
+}
+
+/** A task-list tool call as the hooks see it: its input and its result. */
+export type TaskCall = { tool: string; input: unknown; result: unknown }
+
 /** One subagent run; a resumed implementer is a new run with the same agentId. */
 export type Run = {
   id: string
@@ -40,6 +62,14 @@ export type Run = {
   stepDone?: number
   stepTotal?: number
   stepNote?: string
+  /** What it is doing now, from its latest tool call (`✎ Editing lib/a.ts`). */
+  action?: string
+  /** Tool calls it has made. */
+  steps?: number
+  /** Its own task list, when it keeps one. */
+  ownList?: ChecklistItem[]
+  /** Where its step counter comes from: the `step` tool wins over its own list. */
+  stepSource?: 'tool' | 'list'
 }
 
 /** The main session, as the row above the prompt shows it. */
@@ -73,6 +103,10 @@ declare module 'claude-code' {
       main: Main
       /** Seconds of cache left, written each second while it counts down so the row redraws. */
       cacheLeft: number
+      /** Claude's task list in the main conversation; null when it keeps none. */
+      checklist: Checklist | null
+      /** The latest prompt the person submitted: the heading of the next task list. */
+      prompt: string
     }
   }
 }

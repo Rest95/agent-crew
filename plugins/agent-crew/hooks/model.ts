@@ -1,5 +1,5 @@
 // Parsing superpowers plans, ledgers and script calls; classifying agents. No engine calls.
-import type { Main, Plan, PlanTask, Role, Run } from '../types'
+import type { Checklist, ChecklistItem, Main, Plan, PlanTask, Role, Run, TaskCall } from '../types'
 
 const TASK_HEADING = /^#{1,6}[ \t]+Task[ \t]+(\d+)[ \t]*:[ \t]*(.+?)[ \t]*$/i
 
@@ -316,3 +316,158 @@ export const rowTier = (columns: number): 0 | 1 | 2 | 3 => (columns >= 110 ? 0 :
 
 /** The branch `git branch --show-current` printed; null on an error or a detached HEAD. */
 export const parseBranch = (exitCode: number, stdout: string): string | null => (exitCode === 0 && stdout.trim() ? stdout.trim() : null)
+
+// ---------------------------------------------------------------------------
+// Everyday mode: what an agent is doing, and task lists (Claude's and each agent's own).
+
+const ACTION_MAX = 60
+const LIST_FALLBACK = "Claude's task list"
+const TASK_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TodoWrite', 'TaskList', 'TaskGet'])
+const STATUSES: readonly ChecklistItem['status'][] = ['pending', 'in_progress', 'completed']
+
+const objectOf = (x: unknown): Record<string, unknown> | null => (x !== null && typeof x === 'object' ? (x as Record<string, unknown>) : null)
+const textOf = (x: unknown): string => (typeof x === 'string' ? x : typeof x === 'number' ? String(x) : '')
+const firstLine = (s: string): string => s.split('\n').map(l => l.trim()).find(Boolean) ?? ''
+const cut = (s: string, max: number): string => (s.length > max ? s.slice(0, max - 1) + '…' : s)
+
+/** True for the task-list tools: bookkeeping, not work. */
+export const isTaskTool = (tool: string): boolean => TASK_TOOLS.has(tool)
+
+/** A path as the person reads it: inside the session's folder relative to it, cut from the left to fit. */
+function pathIn(path: string, cwd: string | null, room: number): string {
+  const rel = cwd && path.startsWith(cwd.replace(/\/$/, '') + '/') ? path.slice(cwd.replace(/\/$/, '').length + 1) : path
+  return rel.length > room ? '…' + rel.slice(rel.length - (room - 1)) : rel
+}
+
+/** What a tool call is doing, in a few words; null for bookkeeping (task lists, the step tool). */
+export function describeAction(tool: string, input: unknown, cwd: string | null): string | null {
+  if (isTaskTool(tool) || tool === 'mcp__agent-crew__step') return null
+  const i = objectOf(input) ?? {}
+  const withPath = (verb: string) => `${verb} ${pathIn(textOf(i.file_path ?? i.notebook_path ?? i.path), cwd, ACTION_MAX - verb.length - 1)}`
+  switch (tool) {
+    case 'Edit':
+    case 'Write':
+    case 'MultiEdit':
+    case 'NotebookEdit':
+      return withPath('✎ Editing')
+    case 'Read':
+      return withPath('⌕ Reading')
+    case 'Grep':
+      return cut(`⌕ Searching "${firstLine(textOf(i.pattern))}"`, ACTION_MAX)
+    case 'Glob':
+      return cut(`⌕ Finding ${firstLine(textOf(i.pattern))}`, ACTION_MAX)
+    case 'Bash':
+      return cut(`▶ Running ${firstLine(textOf(i.description)) || firstLine(textOf(i.command))}`, ACTION_MAX)
+    case 'WebFetch': {
+      const url = textOf(i.url)
+      let host = url
+      try {
+        host = new URL(url).host || url
+      } catch {
+        // Not a URL: show it as given.
+      }
+      return cut(`⇣ Fetching ${host}`, ACTION_MAX)
+    }
+    case 'WebSearch':
+      return '⇣ Searching the web'
+    case 'Agent':
+      return cut(`↳ Starting ${firstLine(textOf(i.description))}`, ACTION_MAX)
+    default:
+      return cut(`· ${tool.startsWith('mcp__') ? tool.slice(tool.lastIndexOf('__') + 2) : tool}`, ACTION_MAX)
+  }
+}
+
+const statusOf = (x: unknown): ChecklistItem['status'] | null => (STATUSES.includes(x as ChecklistItem['status']) ? (x as ChecklistItem['status']) : null)
+const nextNumber = (items: readonly ChecklistItem[]): number => items.reduce((n, i) => Math.max(n, i.n), 0) + 1
+
+/** A task list after one task-list call; a call it cannot read returns the same array. */
+export function applyTaskCall(items: readonly ChecklistItem[], call: TaskCall): ChecklistItem[] {
+  const same = items as ChecklistItem[]
+  const input = objectOf(call.input)
+  if (!input) return same
+  if (call.tool === 'TaskCreate') {
+    const task = objectOf(objectOf(call.result)?.task)
+    const key = textOf(task?.id)
+    const text = firstLine(textOf(input.subject) || textOf(task?.subject))
+    if (!key || !text) return same
+    // A numeric id is its number, so a deleted task's number is never handed out again.
+    const n = Math.max(nextNumber(items), /^\d+$/.test(key) ? Number(key) : 0)
+    const active = textOf(input.activeForm)
+    return [...items, { key, n, text, ...(active ? { active } : {}), status: 'pending' }]
+  }
+  if (call.tool === 'TaskUpdate') {
+    const key = textOf(input.taskId)
+    const found = items.find(i => i.key === key)
+    if (!found) return same
+    if (input.status === 'deleted') return items.filter(i => i !== found)
+    const text = firstLine(textOf(input.subject)) || found.text
+    const active = textOf(input.activeForm) || found.active
+    const status = statusOf(input.status) ?? found.status
+    return items.map(i => (i === found ? { ...found, text, ...(active ? { active } : {}), status } : i))
+  }
+  if (call.tool === 'TodoWrite') {
+    if (!Array.isArray(input.todos)) return same
+    let n = nextNumber(items)
+    const out: ChecklistItem[] = []
+    for (const raw of input.todos) {
+      const todo = objectOf(raw)
+      const text = firstLine(textOf(todo?.content))
+      if (!todo || !text || out.some(o => o.key === text)) continue
+      const before = items.find(i => i.key === text)
+      const active = textOf(todo.activeForm)
+      out.push({ key: text, n: before?.n ?? n++, text, ...(active ? { active } : {}), status: statusOf(todo.status) ?? 'pending' })
+    }
+    return out.length ? out : same
+  }
+  return same
+}
+
+/** Done, total and the step in progress, as an agent's step counter shows them. */
+export function checklistProgress(items: readonly ChecklistItem[]): { done: number; total: number; note: string | undefined } {
+  const doing = items.find(i => i.status === 'in_progress')
+  return { done: items.filter(i => i.status === 'completed').length, total: items.length, note: doing ? (doing.active ?? doing.text) : undefined }
+}
+
+/** Every item completed (an empty list is not done). */
+export const isListDone = (items: readonly ChecklistItem[]): boolean => items.length > 0 && items.every(i => i.status === 'completed')
+
+/** Claude's list after one of its calls: a new list starts with a task created after the last one finished, or a TodoWrite that shares no item. */
+export function applyMainTaskCall(list: Checklist | null, call: TaskCall, heading: string): Checklist | null {
+  const todos = call.tool === 'TodoWrite' ? applyTaskCall([], call) : null
+  const isNew =
+    !list ||
+    (call.tool === 'TaskCreate' && isListDone(list.items)) ||
+    (todos !== null && todos.length > 0 && !todos.some(t => list.items.some(i => i.key === t.key)))
+  const base = isNew ? [] : list.items
+  const items = applyTaskCall(base, call)
+  if (items === base) return list
+  if (items.length === 0) return null
+  return { heading: isNew ? heading : list.heading, items }
+}
+
+const wordsOf = (s: string): Set<string> => new Set(s.toLowerCase().match(/[a-z0-9]{3,}/g) ?? [])
+
+/** The task an agent starting now belongs under: the one in progress, the best-matching of several, else none. */
+export function placeAgent(items: readonly ChecklistItem[], description: string): number | null {
+  const doing = items.filter(i => i.status === 'in_progress')
+  if (doing.length === 0) return null
+  const words = wordsOf(description)
+  const score = (i: ChecklistItem) => [...wordsOf(i.text)].filter(w => words.has(w)).length
+  return doing.reduce((best, i) => (score(i) > score(best) || (score(i) === score(best) && i.n > best.n) ? i : best)).n
+}
+
+/** Claude's list in the shape the plan view draws. */
+export function checklistAsPlan(list: Checklist): Plan {
+  return {
+    path: LIST_FALLBACK,
+    title: list.heading,
+    tasks: list.items.map(i => ({ n: i.n, title: i.text })),
+    complete: list.items.filter(i => i.status === 'completed').map(i => i.n),
+    current: list.items.find(i => i.status === 'in_progress')?.n ?? null,
+    workspace: null,
+    inline: false,
+  }
+}
+
+/** A list's heading from the prompt that started it. */
+export const headingOf = (prompt: string): string => cut(firstLine(prompt), ACTION_MAX) || LIST_FALLBACK

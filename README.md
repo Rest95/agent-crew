@@ -21,7 +21,8 @@
   <a href="#a-closer-look">A closer look</a> ·
   <a href="#options">Options</a> ·
   <a href="#with-superpowers-plans">Superpowers</a> ·
-  <a href="#troubleshooting">Troubleshooting</a>
+  <a href="#troubleshooting">Troubleshooting</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
 </p>
 
 <p align="center">
@@ -212,6 +213,8 @@ bun scripts/preview.ts > preview/index.html # every view, drawn by hooks/art.ts
 ```
 
 The logic lives in `hooks/model.ts`, the drawing in `hooks/art.ts` and the wiring in `hooks/register.tsx`. Designs and plans are in [`docs/superpowers/`](docs/superpowers/).
+
+What changed in each version is in the [changelog](CHANGELOG.md).
 
 ## Credits
 

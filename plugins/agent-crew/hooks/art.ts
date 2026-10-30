@@ -79,7 +79,8 @@ export const progressOf = (run: Run): number | null =>
 
 export function runTitle(run: Run, plan: Plan | null): string {
   if (run.role === 'final') return 'Whole branch'
-  const task = run.task !== null ? plan?.tasks.find(t => t.n === run.task) : undefined
+  // Superpowers roles are named by their task; everyday agents keep the name Claude gave them.
+  const task = run.task !== null && run.role !== 'other' ? plan?.tasks.find(t => t.n === run.task) : undefined
   if (task) return `Task ${task.n} · ${task.title}`
   return run.label || run.type
 }
@@ -289,8 +290,16 @@ export function totalsSvg(width: number, cost: number, tokens: number, ms: numbe
 export const AGENT_ROW_HEIGHT = 66
 
 /** One agent: crab, title, role in its colour, model, steps, stats and a progress line. */
+/** A running agent with an action line is one line taller. */
+const ACTION_LINE = 14
+const ACTION_COLOR = '#e8c66a'
+const showsAction = (run: Run): boolean => run.status === 'running' && Boolean(run.action)
+export const agentRowHeight = (run: Run): number => AGENT_ROW_HEIGHT + (showsAction(run) ? ACTION_LINE : 0)
+
 export function agentRowSvg(width: number, run: Run, plan: Plan | null, now: number): string {
   const color = colorOf(run)
+  const dy = showsAction(run) ? ACTION_LINE : 0
+  const H = AGENT_ROW_HEIGHT + dy
   const barW = width - 64
   const ctx = ctxPercent(run)
   const progress = progressOf(run)
@@ -299,14 +308,15 @@ export function agentRowSvg(width: number, run: Run, plan: Plan | null, now: num
   const steps = stepsText(run)
   const stepsW = Math.max(0, barW - textWidth(stats, 11) - 12)
   const fillW = Math.round(barW * (progress ?? ctx / 100))
-  return svg(width, AGENT_ROW_HEIGHT, `${runCrab(0, 14, run)}
+  return svg(width, H, `${runCrab(0, 14, run)}
 <text class="t" x="42" y="18" font-family="${FONT}" font-size="13" font-weight="600">${xml(fitText(runTitle(run, plan), 13, barW))}</text>
-<text x="42" y="34" font-family="${FONT}" font-size="11"><tspan fill="${color}" font-weight="600">${xml(runRole(run))}</tspan><tspan class="s"> ${xml(meta)}</tspan></text>
-${steps && stepsW > 30 ? `<text class="t" x="42" y="49" font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${xml(fitText(steps, 11, stepsW))}</text>` : ''}
-<text class="s" x="${42 + barW}" y="49" text-anchor="end" font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${stats}</text>
-<rect class="k" x="42" y="55" width="${barW}" height="4" rx="2"/><rect${progress === null ? ' class="m"' : ''} x="42" y="55" width="${fillW}" height="4" rx="2"${progress === null ? '' : ` fill="${color}"`}/>
+${dy ? `<text x="42" y="33" font-family="${FONT}" font-size="11" fill="${ACTION_COLOR}">${xml(fitText(run.action ?? '', 11, barW))}</text>` : ''}
+<text x="42" y="${34 + dy}" font-family="${FONT}" font-size="11"><tspan fill="${color}" font-weight="600">${xml(runRole(run))}</tspan><tspan class="s"> ${xml(meta)}</tspan></text>
+${steps && stepsW > 30 ? `<text class="t" x="42" y="${49 + dy}" font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${xml(fitText(steps, 11, stepsW))}</text>` : ''}
+<text class="s" x="${42 + barW}" y="${49 + dy}" text-anchor="end" font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${stats}</text>
+<rect class="k" x="42" y="${55 + dy}" width="${barW}" height="4" rx="2"/><rect${progress === null ? ' class="m"' : ''} x="42" y="${55 + dy}" width="${fillW}" height="4" rx="2"${progress === null ? '' : ` fill="${color}"`}/>
 ${statusMark(width - 8, 16, run.status, color)}
-<line class="ln" x1="0" y1="65.5" x2="${width}" y2="65.5"/>`)
+<line class="ln" x1="0" y1="${H - 0.5}" x2="${width}" y2="${H - 0.5}"/>`)
 }
 
 export const TASK_ROW_HEIGHT = 30
@@ -368,12 +378,29 @@ export function planGroups(plan: Plan, runs: readonly Run[]): Group[] {
   }))
   const final = runs.filter(r => r.role === 'final')
   if (final.length) groups.push({ key: 'final', kind: 'final', n: null, name: 'Whole branch', state: null, runs: final })
-  const other = runs.filter(r => r.role === 'other')
+  // Agents outside the plan: everyday agents placed under none of its tasks.
+  const other = runs.filter(r => r.role === 'other' && (r.task === null || !plan.tasks.some(t => t.n === r.task)))
   if (other.length) groups.push({ key: 'other', kind: 'other', n: null, name: 'Other agents', state: null, runs: other })
   return groups
 }
 
 /** A group is open when the person opened it; until then, the current task and a running final review are. */
+/** The no-list heading: how many agents, how many at work, how many done. */
+export const noListHeading = (runs: readonly Run[]): string => {
+  const working = runs.filter(r => r.status === 'running').length
+  return `${runs.length} agent${runs.length === 1 ? '' : 's'} · ${working} working · ${runs.length - working} done`
+}
+
+/** The no-list bar: agents finished out of all agents. */
+export const noListPhase = (runs: readonly Run[]): { done: number; total: number; label: string; isFinished: boolean } => {
+  const done = runs.filter(r => r.status !== 'running').length
+  return { done, total: runs.length, label: `${done}/${runs.length} done`, isFinished: runs.length > 0 && done === runs.length }
+}
+
+/** A finished agent folded to one line: mark, name, type, time, cost. */
+export const finishedLine = (run: Run, now: number): string =>
+  `${run.status === 'failed' ? GLYPH.failed : GLYPH.done} ${run.label || run.type}  ${run.type} · ${fmtTime(elapsed(run, now))} · ≈${fmtCost(run.costUsd)}`
+
 export const isGroupOpen = (g: Group, open: Readonly<Record<string, boolean>> = {}): boolean =>
   open[g.key] ?? (g.state === 'current' || (g.kind === 'final' && g.runs.some(r => r.status === 'running')))
 
@@ -389,8 +416,12 @@ export function desktopPaneItems(width: number, plan: Plan | null, runs: readonl
     plan?.inline && plan.current !== null && running.length === 0 && !plan.complete.includes(plan.current) && !opts.phase?.isFinished
       ? plan.tasks.find(t => t.n === plan.current)
       : undefined
-  const agent = (r: Run): PaneItem => ({ kind: 'svg', key: r.id, svg: agentRowSvg(width, r, plan, now), height: AGENT_ROW_HEIGHT, alt: `${runTitle(r, plan)}: ${runRole(r)}`, ...(r.agentId ? { agentId: r.agentId } : {}) })
+  const agent = (r: Run): PaneItem => ({ kind: 'svg', key: r.id, svg: agentRowSvg(width, r, plan, now), height: agentRowHeight(r), alt: `${runTitle(r, plan)}: ${runRole(r)}`, ...(r.agentId ? { agentId: r.agentId } : {}) })
   const items: PaneItem[] = []
+  if (!plan && runs.length > 0) {
+    const heading = noListHeading(runs)
+    items.push({ kind: 'svg', key: 'bar', svg: planBarSvg(heading, noListPhase(runs), running.length, width), height: BAR_HEIGHT, alt: `${heading}: ${noListPhase(runs).label}` })
+  }
   if (plan) {
     const phase = opts.phase ?? { done: plan.complete.length, total: plan.tasks.length, label: `Tasks ${plan.complete.length}/${plan.tasks.length}`, isFinished: false }
     items.push({ kind: 'svg', key: 'bar', svg: planBarSvg(plan.title, phase, running.length, width), height: BAR_HEIGHT, alt: `${plan.title}: ${phase.label}` })
@@ -415,9 +446,10 @@ export function desktopPaneItems(width: number, plan: Plan | null, runs: readonl
     }
     return items
   }
-  // No plan: the plain list of agents.
+  // No plan: the agents at work, then the finished ones folded away.
   if (runs.length === 0) items.push({ kind: 'empty' })
-  if (running.length > 0) items.push({ kind: 'section', text: `Running · ${running.length}` })
+  else items.push({ kind: 'rule' })
+  if (running.length > 0) items.push({ kind: 'section', text: `Working · ${running.length}` })
   items.push(...running.map(agent))
   if (finished.length > 0) items.push({ kind: 'finished', open: opts.finishedOpen, count: finished.length })
   if (opts.finishedOpen) items.push(...finished.map(agent))

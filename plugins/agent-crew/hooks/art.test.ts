@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { Plan, Run } from '../types'
 import { TYPE_PALETTE, agentRowSvg, colorOf, desktopPaneItems, bar, contextBarSvg, contextRingSvg, fmtTime, fmtTokens, hourglassSvg, runRole, runTitle, taskRowSvg } from './art'
+import { agentRowHeight, finishedLine, planGroups } from './art'
 
 const plan: Plan = {
   path: 'docs/plans/x.md',
@@ -102,4 +103,49 @@ test('plain agents get a colour by type, never the grey of nothing', () => {
   expect(TYPE_PALETTE).toContain(custom)
   expect(colorOf(run({ role: 'other', type: 'code-reviewer', task: null }))).toBe(custom)
   expect(colorOf(run({ role: 'implement' }))).toBe('#378ADD')
+})
+
+// ---------------------------------------------------------------------------
+// Everyday mode
+
+test('planGroups: an everyday run under a task is not also under Other agents', () => {
+  const placed = run({ id: 'p', role: 'other', task: 2, label: 'Write the CSV writer' })
+  const loose = run({ id: 'l', role: 'other', task: null, label: 'Look around' })
+  const groups = planGroups(plan, [placed, loose])
+  expect(groups.find(g => g.key === 't2')?.runs.map(r => r.id)).toEqual(['p'])
+  expect(groups.find(g => g.key === 'other')?.runs.map(r => r.id)).toEqual(['l'])
+})
+
+test('runTitle: everyday runs keep their name', () => {
+  expect(runTitle(run({ role: 'other', task: 1, label: 'Write the CSV writer' }), plan)).toBe('Write the CSV writer')
+  expect(runTitle(run({ role: 'implement', task: 1 }), plan)).toBe('Task 1 · A & B')
+})
+
+test("agentRowSvg: a running agent's action is drawn", () => {
+  const doing = run({ role: 'other', task: null, label: 'Write it', action: '✎ Editing lib/a.ts' })
+  expect(agentRowSvg(300, doing, null, 1000)).toContain('✎ Editing lib/a.ts')
+  expect(agentRowHeight(doing)).toBe(80)
+  const ended = { ...doing, status: 'done' as const, endedAt: 500 }
+  expect(agentRowSvg(300, ended, null, 1000)).not.toContain('✎ Editing')
+  expect(agentRowHeight(ended)).toBe(66)
+})
+
+test('desktopPaneItems: the no-list view', () => {
+  const runs = [
+    run({ id: 'a', role: 'other', task: null, label: 'One', startedAt: 0 }),
+    run({ id: 'b', role: 'other', task: null, label: 'Two', startedAt: 1 }),
+    run({ id: 'c', role: 'other', task: null, label: 'Three', status: 'done', startedAt: 2, endedAt: 3 }),
+  ]
+  const items = desktopPaneItems(300, null, runs, 10, { finishedOpen: false })
+  const first = items[0]
+  expect(first?.kind === 'svg' ? first.alt : '').toContain('3 agents · 2 working · 1 done')
+  const rule = items.findIndex(i => i.kind === 'rule')
+  expect(rule).toBeGreaterThan(0)
+  expect(items[rule + 1]).toEqual({ kind: 'section', text: 'Working · 2' })
+})
+
+test('finishedLine', () => {
+  const done = run({ role: 'other', task: null, type: 'Explore', label: 'Map the API routes', status: 'done', startedAt: 0, endedAt: 31_000, costUsd: 0.01 })
+  expect(finishedLine(done, 40_000)).toBe('✓ Map the API routes  Explore · 0:31 · ≈$0.01')
+  expect(finishedLine({ ...done, status: 'failed' }, 40_000).startsWith('✗ ')).toBe(true)
 })

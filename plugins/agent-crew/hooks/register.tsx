@@ -46,6 +46,7 @@ import {
   totalsSvg,
 } from './art'
 import { cacheView, classify, currentTask, isPlanLabel, contextLevel, costOf, countFindings, dueWarning, rowProgress, rowTier, fixRound, parseBranch, parseLedger, parsePlan, parseScriptCall, planPhase, rootOf, samePlan, windowOf, workspaceFrom } from './model'
+import { rowFit, rowPieces } from './model'
 import { applyMainTaskCall, applyTaskCall, changesTaskList, namesPath, startsNewList, checklistAsPlan, checklistProgress, describeAction, headingOf, isListDone, isTaskTool, placeAgent } from './model'
 import type { ScriptCall, Usage } from './model'
 
@@ -1108,7 +1109,7 @@ export const register: Register = (on, options) => {
     const progress = rowProgress(plan, list, main.planDoneAt)
     const cache = cacheView(main, now)
     // The frame and its padding take four columns.
-    const tier = rowTier((e.props.bodyColumns || 120) - 4)
+    const columns = (e.props.bodyColumns || 120) - 4
     const warn = cache.level === 'alert' ? ALERT_COLOR : cache.level === 'warn' ? WARN_COLOR : null
     const phase = plan && progress.kind === 'plan' ? planPhase(plan, list) : null
     const percent = phase ? Math.round((phase.isFinished ? 1 : phase.total ? phase.done / phase.total : 0) * 100) : 0
@@ -1118,6 +1119,16 @@ export const register: Register = (on, options) => {
     const agentsPercent = progress.kind === 'agents' && progress.working + progress.done > 0 ? Math.round((progress.done / (progress.working + progress.done)) * 100) : 0
     const Svg = e.surface !== 'terminal' && 'Svg' in ui ? ui.Svg : null
     const icon = 22
+    const show = Svg
+      ? rowPieces(rowTier(columns))
+      : rowFit(columns, {
+          progress: progress.kind === 'agents' ? { working: progress.working, done: progress.done, percent: `${agentsPercent}%` } : plan && phase ? { title: plan.title, label: phase.label, percent: `${percent}%`, working } : null,
+          model: main.model ? modelName(main.model) : null,
+          effort: main.effort,
+          branch: main.branch,
+          context: main.context === null ? null : `${main.context}%`,
+          cache: cache.text,
+        })
     // About 8 CSS px per column on the desktop; the bar takes about a third of the row.
     const barWidth = Math.max(180, Math.min(420, Math.round((e.props.bodyColumns || 120) * 8 * 0.35)))
 
@@ -1126,25 +1137,25 @@ export const register: Register = (on, options) => {
         <Box key="progress" flexDirection="row" columnGap={1} flexShrink={1}>
           <Text wrap="truncate-end" color={ACCENT}>●</Text>
           <Text bold wrap="truncate-end">
-            {tier < 3 ? `${progress.working} working · ${progress.done} done` : `${progress.working} working`}
+            {show.effort ? `${progress.working} working · ${progress.done} done` : `${progress.working} working`}
           </Text>
-          {tier < 3 && <Text wrap="truncate-end" color={ACCENT}>{bar(agentsPercent, 16)}</Text>}
-          {tier < 3 && <Text wrap="truncate-end" dimColor>{`${agentsPercent}%`}</Text>}
+          {show.bar && <Text wrap="truncate-end" color={ACCENT}>{bar(agentsPercent, 16)}</Text>}
+          {show.bar && <Text wrap="truncate-end" dimColor>{`${agentsPercent}%`}</Text>}
         </Box>
       ) : plan && phase ? (
         <Box key="progress" flexDirection="row" columnGap={1} flexShrink={1} alignItems="center">
-          {Svg && tier < 3 ? (
+          {Svg && show.bar ? (
             <Svg source={planBarSvg(plan.title, phase, working, barWidth)} alt={`${plan.title}: ${phase.label}`} width={barWidth} height={BAR_HEIGHT} />
           ) : (
             <Box flexDirection="row" columnGap={1}>
               <Text wrap="truncate-end" color={planColor}>●</Text>
-              <Text wrap="truncate-end" bold>{shorten(plan.title, tier === 0 ? 28 : 18)}</Text>
-              {tier < 3 && <Text wrap="truncate-end" color={planColor}>{bar(percent, 16)}</Text>}
+              <Text wrap="truncate-end" bold>{shorten(plan.title, show.titleMax)}</Text>
+              {show.bar && <Text wrap="truncate-end" color={planColor}>{bar(percent, 16)}</Text>}
               <Text wrap="truncate-end" bold>{phase.label}</Text>
               <Text wrap="truncate-end" dimColor>{`${percent}%`}</Text>
             </Box>
           )}
-          {tier === 0 && working > 0 && <Text wrap="truncate-end" dimColor>{`· ${working} working`}</Text>}
+          {show.working && working > 0 && <Text wrap="truncate-end" dimColor>{`· ${working} working`}</Text>}
         </Box>
       ) : null
 
@@ -1166,10 +1177,10 @@ export const register: Register = (on, options) => {
           <Box flexGrow={1} flexShrink={1} />
           {main.model && (
             <Text key="model" bold wrap="truncate-end">
-              {main.effort ? `${modelName(main.model)} · ${main.effort}` : modelName(main.model)}
+              {main.effort && show.effort ? `${modelName(main.model)} · ${main.effort}` : modelName(main.model)}
             </Text>
           )}
-          {tier === 0 && main.branch && (
+          {show.branch && main.branch && (
             <Box key="branch" flexDirection="row" columnGap={1} flexShrink={0} alignItems="center">
               {Svg ? <Svg source={branchIconSvg()} alt="branch" width={icon} height={icon} /> : <Text wrap="truncate-end" dimColor>⎇</Text>}
               <Text wrap="truncate-end">{main.branch}</Text>
@@ -1178,7 +1189,7 @@ export const register: Register = (on, options) => {
           {main.context !== null && (
             <Box key="context" flexDirection="row" columnGap={1} flexShrink={0} alignItems="center">
               {Svg ? <Svg source={contextRingSvg(main.context)} alt="context" width={icon} height={icon} /> : <Text wrap="truncate-end" dimColor>ctx</Text>}
-              {tier < 2 &&
+              {show.contextBar &&
                 (Svg ? (
                   <Svg source={contextBarSvg(main.context)} alt={`context ${main.context}%`} width={80} height={6} />
                 ) : (

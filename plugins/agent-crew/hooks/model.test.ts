@@ -2,6 +2,8 @@ import { expect, test } from 'claude-code/testing'
 
 import type { Main, Plan, Run } from '../types'
 import { cacheView, classify, currentTask, isPlanLabel, contextLevel, costOf, countFindings, dueWarning, parseBranch, parseLedger, parsePlan, parseScriptCall, planPhase, rowProgress, rowTier, windowOf, workspaceFrom } from './model'
+import { rowFit, rowWidth } from './model'
+import type { RowContent } from './model'
 import { applyMainTaskCall, applyTaskCall, checklistAsPlan, checklistProgress, describeAction, headingOf, isListDone, placeAgent } from './model'
 import type { ChecklistItem } from '../types'
 
@@ -395,4 +397,43 @@ test('placeAgent: a tie goes to the task started last', () => {
   items = applyTaskCall(items, updateTask('2', { status: 'in_progress' }))
   items = applyTaskCall(items, updateTask('1', { status: 'in_progress' }))
   expect(placeAgent(items, 'nothing in common')).toBe(1)
+})
+
+// ---------------------------------------------------------------------------
+// The row measures what it shows
+
+const sample: RowContent = {
+  progress: { title: 'Add CSV export to the reports page', label: 'Tasks 1/4', percent: '25%', working: 2 },
+  model: 'Haiku 5.5',
+  effort: 'medium',
+  branch: 'feat/csv-export',
+  context: '6%',
+  cache: '59:50',
+}
+
+test('rowFit: everything shows when there is room', () => {
+  expect(rowFit(150, sample)).toEqual({ titleMax: 28, bar: true, working: true, branch: true, contextBar: true, effort: true })
+})
+
+test('rowFit: pieces go whole, the working count first, then the branch', () => {
+  expect(rowFit(135, sample)).toMatchObject({ titleMax: 28, bar: true, working: false, branch: true })
+  expect(rowFit(116, sample)).toMatchObject({ titleMax: 28, bar: true, working: false, branch: false, contextBar: true })
+  expect(rowFit(100, sample)).toMatchObject({ titleMax: 18, bar: true, branch: false, contextBar: true })
+  expect(rowFit(90, sample)).toMatchObject({ titleMax: 18, bar: true, contextBar: false })
+  expect(rowFit(74, sample)).toMatchObject({ titleMax: 18, bar: false, contextBar: false, effort: true })
+})
+
+test('rowFit: what it picks always fits, down to a narrow window', () => {
+  const short = { ...sample, progress: { working: 2, done: 1, percent: '33%' } }
+  const none = { ...sample, progress: null, branch: null, context: null }
+  for (const content of [sample, short, none]) {
+    for (let columns = 60; columns <= 220; columns++) expect(rowWidth(rowFit(columns, content), content)).toBeLessThanOrEqual(columns)
+  }
+})
+
+test('rowFit: a short branch and title keep more', () => {
+  const small = { ...sample, progress: { title: 'Demo', label: 'Tasks 1/4', percent: '25%', working: 1 }, branch: 'main' }
+  expect(rowFit(105, small)).toEqual({ titleMax: 28, bar: true, working: true, branch: true, contextBar: true, effort: true })
+  expect(rowFit(104, small).working).toBe(false)
+  expect(rowFit(104, small).branch).toBe(true)
 })

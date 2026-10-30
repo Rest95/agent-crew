@@ -314,6 +314,62 @@ export const contextLevel = (percent: number): 'ok' | 'warn' | 'alert' => (perce
 /** How much of the row fits: 0 all; 1 no branch; 2 also no context bar; 3 also no progress bar or working count. */
 export const rowTier = (columns: number): 0 | 1 | 2 | 3 => (columns >= 110 ? 0 : columns >= 90 ? 1 : columns >= 70 ? 2 : 3)
 
+/** What the row shows, in whole pieces. */
+export type RowShow = { titleMax: number; bar: boolean; working: boolean; branch: boolean; contextBar: boolean; effort: boolean }
+
+/** What the row has to show, as text. */
+export type RowContent = {
+  progress: { title: string; label: string; percent: string; working: number } | { working: number; done: number; percent: string } | null
+  model: string | null
+  effort: string | null
+  branch: string | null
+  context: string | null
+  cache: string
+}
+
+const ROW_BAR = 16
+const CONTEXT_BAR = 8
+// From everything to the least: the row gives up whole pieces rather than cutting them.
+const ROW_STEPS: readonly RowShow[] = [
+  { titleMax: 28, bar: true, working: true, branch: true, contextBar: true, effort: true },
+  { titleMax: 28, bar: true, working: false, branch: true, contextBar: true, effort: true },
+  { titleMax: 28, bar: true, working: false, branch: false, contextBar: true, effort: true },
+  { titleMax: 18, bar: true, working: false, branch: false, contextBar: true, effort: true },
+  { titleMax: 18, bar: true, working: false, branch: false, contextBar: false, effort: true },
+  { titleMax: 18, bar: false, working: false, branch: false, contextBar: false, effort: true },
+  { titleMax: 12, bar: false, working: false, branch: false, contextBar: false, effort: true },
+  { titleMax: 12, bar: false, working: false, branch: false, contextBar: false, effort: false },
+]
+
+const columnsIn = (s: string): number => [...s].reduce((n, ch) => n + columnsOf(ch), 0)
+
+/** The terminal columns the row takes with these pieces: each piece, and two between them. */
+export function rowWidth(show: RowShow, c: RowContent): number {
+  const pieces: number[] = []
+  const p = c.progress
+  if (p && 'title' in p) {
+    const bar = show.bar ? ROW_BAR + 1 : 0
+    const working = show.working && p.working > 0 ? 1 + columnsIn(`· ${p.working} working`) : 0
+    pieces.push(2 + Math.min(columnsIn(p.title), show.titleMax) + 1 + bar + columnsIn(p.label) + 1 + columnsIn(p.percent) + working)
+  } else if (p) {
+    const text = show.effort ? `${p.working} working · ${p.done} done` : `${p.working} working`
+    pieces.push(2 + columnsIn(text) + (show.bar ? 1 + ROW_BAR + 1 + columnsIn(p.percent) : 0))
+  }
+  if (c.model) pieces.push(columnsIn(c.effort && show.effort ? `${c.model} · ${c.effort}` : c.model))
+  if (c.branch && show.branch) pieces.push(2 + columnsIn(c.branch))
+  if (c.context) pieces.push(4 + (show.contextBar ? CONTEXT_BAR + 1 : 0) + columnsIn(c.context))
+  pieces.push(2 + columnsIn(c.cache))
+  // The spring between the progress and the rest is one more child, so one gap per piece.
+  return pieces.reduce((n, w) => n + w, 0) + pieces.length * 2
+}
+
+/** The most the row can show in these columns. */
+export const rowFit = (columns: number, content: RowContent): RowShow =>
+  ROW_STEPS.find(step => rowWidth(step, content) <= columns) ?? (ROW_STEPS[ROW_STEPS.length - 1] as RowShow)
+
+/** The desktop draws the row in its own proportions: its pieces go by the window's width alone. */
+export const rowPieces = (tier: 0 | 1 | 2 | 3): RowShow => ({ titleMax: tier === 0 ? 28 : 18, bar: tier < 3, working: tier === 0, branch: tier === 0, contextBar: tier < 2, effort: tier < 3 })
+
 /** The branch `git branch --show-current` printed; null on an error or a detached HEAD. */
 export const parseBranch = (exitCode: number, stdout: string): string | null => (exitCode === 0 && stdout.trim() ? stdout.trim() : null)
 

@@ -77,7 +77,7 @@ Each action follows the agent's latest tool call, and finished agents fold down 
 | Context | How full the context is: amber from 65%, red from 85% |
 | Cache | Time left on the prompt cache, from Claude's last answer |
 
-The frame is white at rest, amber with 20 minutes of cache left and red with 10. You also get a notification at 10 and 5 minutes. Narrow windows drop the branch first, then the bars.
+The frame is white at rest, amber with 20 minutes of cache left and red with 10. You also get a notification at 10 and 5 minutes. When it's tight, the row drops whole pieces rather than cutting them: the working count, then the branch, then the bars.
 
 ### In the desktop app
 
